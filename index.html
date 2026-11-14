@@ -54,7 +54,10 @@
   .w .ru { font-weight: 800; letter-spacing: -.015em; line-height: 1.08; }
   .w .st { text-decoration: underline; text-decoration-thickness: .07em; text-underline-offset: .14em; }
   .w .lat { font-size: .44em; font-weight: 500; color: var(--soft); line-height: 1.25; margin-top: .12em; }
-  .w .de { font-size: .4em; font-weight: 400; color: var(--de); line-height: 1.25; }
+  .w .de { font-size: .4em; font-weight: 400; color: var(--de); line-height: 1.25; position: relative; white-space: nowrap; }
+  /* words of one fixed expression: the meaning sits on the first word, a line links the rest */
+  .w .de.grp { color: transparent; align-self: stretch; }
+  .w .de.grp::before { content: ""; position: absolute; left: -.75em; right: .1em; top: 58%; border-top: 2px solid var(--de); opacity: .55; border-radius: 2px; }
   .line.active .w { opacity: .62; transition: opacity .18s; }
   .line.active .w.sung { opacity: 1; }
   .line .tr { display: none; font-size: .44em; font-weight: 500; color: var(--de); margin-top: .35em; line-height: 1.3; }
@@ -117,11 +120,11 @@
   <div class="bar" id="bar"><div class="track"><div class="fill" id="fill"></div></div></div>
   <div class="times"><span id="tNow">0:00</span><span id="tDur">0:00</span></div>
   <div class="btns">
-    <button class="nudge" id="nudgeMinus" aria-label="Text 1 Sekunde später">−1 s</button>
+    <button class="nudge" id="nudgeMinus" aria-label="Text eine Viertelsekunde später">−¼ s</button>
     <button id="btnPrev" aria-label="Vorheriger Song"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
     <button class="pp" id="btnPlay" aria-label="Play/Pause"></button>
     <button id="btnNext" aria-label="Nächster Song"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
-    <button class="nudge" id="nudgePlus" aria-label="Text 1 Sekunde früher">+1 s</button>
+    <button class="nudge" id="nudgePlus" aria-label="Text eine Viertelsekunde früher">+¼ s</button>
   </div>
 </div></div>
 
@@ -147,7 +150,7 @@
     </div>
     <h3>Timing</h3>
     <div class="group">
-      <div class="item"><span>Synchron-Punkte für diesen Song<small id="kfInfo">Mit ±1 s oder Zeile lange drücken setzen</small></span>
+      <div class="item"><span>Synchron-Punkte für diesen Song<small id="kfInfo">Zeile lange drücken, mit ±¼ s feinjustieren</small></span>
         <button class="pill" id="kfReset">Zurücksetzen</button></div>
     </div>
     <h3>Ohne Spotify</h3>
@@ -258,7 +261,7 @@ function setKeyframe(r, off) {
   kfs = kfs.filter(([x]) => Math.abs(x - r) > 8000);          // a nearby keyframe is replaced
   kfs.push([r, off]); kfs.sort((x, y) => x[0] - y[0]); saveKeyframes(); current.idx = -2;
 }
-const fmtOff = (o) => (o >= 0 ? "+" : "") + (o / 1000).toFixed(1).replace(".", ",") + " s";
+const fmtOff = (o) => (o >= 0 ? "+" : "") + (o / 1000).toFixed(2).replace(".", ",") + " s";
 
 /* ---------- Spotify (PKCE) ---------- */
 const REDIRECT = location.origin + location.pathname;
@@ -542,7 +545,7 @@ function render() {
     const words = wordsFor(l.text), de = current.gloss?.byText?.[l.text]?.de || "";
     items.push({ t: l.t, i, words });
     html += `<div class="line" data-k="${items.length - 1}">` + rowsOf(words).map(r => `<div class="row">` + r.map(w =>
-      `<span class="w"><span class="ru">${stressHtml(w.stress || w.ru)}</span><span class="lat">${esc(w.lat || translit(w.ru))}</span><span class="de">${esc(w.de || " ")}</span></span>`).join("") + `</div>`).join("")
+      `<span class="w"><span class="ru">${stressHtml(w.stress || w.ru)}</span><span class="lat">${esc(w.lat || translit(w.ru))}</span>${isCont(w) ? `<span class="de grp"> </span>` : `<span class="de">${esc(w.de || " ")}</span>`}</span>`).join("") + `</div>`).join("")
       + (de ? `<div class="tr">${esc(de)}</div>` : "") + `</div>`;
     // long instrumental gap after this line → show a pause marker
     if (synced && next - l.t > 12000 && L[i + 1]?.text !== "") { const t = l.t + Math.max(4000, syllablesOf(words) * 450 + 1500); items.push({ t, pause: true }); html += `<div class="pause" data-k="${items.length - 1}">• • •</div>`; }
@@ -556,8 +559,9 @@ function render() {
     el.addEventListener("contextmenu", (e) => e.preventDefault());
     el.onclick = () => { if (!long && synced) seekTo(items[+el.dataset.k].t + 1); };
   });
-  if (current.lyrics.estimated) setStatus("Timing geschätzt – mit ±1 s anpassen, die App merkt es sich", true);
+  if (current.lyrics.estimated) setStatus("Timing geschätzt – gesungene Zeile lange drücken, die App merkt es sich", true);
 }
+const isCont = (w) => /^\s*[↑^]\s*$/.test(w.de || "");
 const syllablesOf = (words) => words.reduce((a, w) => a + syllables(w.ru), 0);
 
 /* ---------- karaoke loop ---------- */
@@ -625,8 +629,8 @@ function nudge(ms) {                  // + = text comes earlier, − = later; sa
   clearTimeout(pendingTimer); pendingTimer = setTimeout(commitPending, 4000);
   setStatus(`Timing ${fmtOff(off)} …`, true);
 }
-$("#nudgeMinus").onclick = () => nudge(-1000);
-$("#nudgePlus").onclick = () => nudge(1000);
+$("#nudgeMinus").onclick = () => nudge(-250);
+$("#nudgePlus").onclick = () => nudge(250);
 $("#btnNext").onclick = () => skip(1);
 $("#btnPrev").onclick = () => skip(-1);
 /* progress bar: tap or drag to seek */

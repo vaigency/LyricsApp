@@ -387,6 +387,16 @@ async function findLyrics(m) {
     const best = list.filter(x => x.syncedLyrics).sort((a, b) => Math.abs(a.duration * 1000 - m.durationMs) - Math.abs(b.duration * 1000 - m.durationMs))[0];
     rec = best || rec || list[0] || null;
   }
+  if (!rec?.syncedLyrics) {           // artist spelled differently (e.g. Cyrillic or real name): title only, length must match ±2 s
+    const r = await fetch(`${LRCLIB}/search?` + new URLSearchParams({ q: cleanTitle(m.title) }));
+    const norm = (x) => x.toLowerCase().replace(/[^\p{L}\d]+/gu, "");
+    const odd = (x) => /remix|gachi|cover|karaoke|instrumental/i.test(x) && !/remix|cover/i.test(m.title);
+    const cands = (r.ok ? await r.json() : []).filter(x => (x.syncedLyrics || x.plainLyrics) && Math.abs(x.duration * 1000 - m.durationMs) <= 2000);
+    cands.sort((a, b) => (!a.syncedLyrics - !b.syncedLyrics) || (odd(a.trackName) - odd(b.trackName))
+      || ((norm(a.trackName) !== norm(cleanTitle(m.title))) - (norm(b.trackName) !== norm(cleanTitle(m.title))))
+      || Math.abs(a.duration * 1000 - m.durationMs) - Math.abs(b.duration * 1000 - m.durationMs));
+    if (cands[0] && (cands[0].syncedLyrics || !rec)) rec = cands[0];
+  }
   if (!rec) return null;
   const out = recToLyrics(rec); store.set(ck, out); return out;
 }

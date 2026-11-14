@@ -222,12 +222,20 @@ function loadKeyframes(key) {
   if (!kfs) { const old = store.get("off:" + key, 0); kfs = old ? [[0, old]] : []; }   // migrate old single offset
 }
 const saveKeyframes = () => { if (current.key) store.set("kf:" + current.key, kfs); };
+/* A series of ±1 s presses is ONE correction: it applies live but is only saved as a keyframe
+   once the presses stop (4 s after the last one), at the position of the last press. */
+let pending = null, pendingTimer = null;
+function activeKfs() {
+  if (!pending) return kfs;
+  return [...kfs.filter(([x]) => Math.abs(x - pending[0]) > 8000), pending].sort((a, b) => a[0] - b[0]);
+}
 function offAt(r) {
-  if (!kfs.length) return 0;
-  if (r <= kfs[0][0]) return kfs[0][1];
-  const last = kfs[kfs.length - 1]; if (r >= last[0]) return last[1];
-  let j = 0; while (kfs[j + 1][0] < r) j++;
-  const [r1, o1] = kfs[j], [r2, o2] = kfs[j + 1];
+  const K = activeKfs();
+  if (!K.length) return 0;
+  if (r <= K[0][0]) return K[0][1];
+  const last = K[K.length - 1]; if (r >= last[0]) return last[1];
+  let j = 0; while (K[j + 1][0] < r) j++;
+  const [r1, o1] = K[j], [r2, o2] = K[j + 1];
   let a = r1, b = r2;                       // window in which the offset moves from o1 to o2
   const g = cfg.offsetMs, its = (current.items || []).filter(x => !x.pause);
   let best = 0;
@@ -239,6 +247,11 @@ function offAt(r) {
   if (best < 4000) { a = r1; b = r2; }
   if (r <= a) return o1; if (r >= b) return o2;
   return o1 + (o2 - o1) * (r - a) / (b - a);
+}
+function commitPending() {
+  clearTimeout(pendingTimer); if (!pending) return;
+  const [r, off] = pending; pending = null; setKeyframe(r, off);
+  setStatus(`Synchron-Punkt gespeichert: ${fmt(r)} ${fmtOff(off)}`);
 }
 function setKeyframe(r, off) {
   r = Math.max(0, Math.round(r)); off = Math.round(off);
@@ -322,7 +335,8 @@ async function prefetchNext(key) {
 }
 function startPolling() { updateSpState(); clearInterval(pollTimer); pollSpotify(); pollTimer = setInterval(pollSpotify, 1500); }
 function updateSpState() { $("#spState").textContent = tok ? "verbunden" : "nicht verbunden"; $("#btnSpotify").textContent = tok ? "Neu verbinden" : "Verbinden"; }
-document.addEventListener("visibilitychange", () => { if (!document.hidden && clock.source === "spotify") pollSpotify(); requestWakeLock(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) commitPending(); else if (clock.source === "spotify") pollSpotify(); requestWakeLock(); });
+addEventListener("pagehide", () => commitPending());
 
 /* ---------- background colour from the album cover (like Spotify's lyrics view) ---------- */
 const DARK = "#0c0c0e";
@@ -475,6 +489,7 @@ const current = { key: null, meta: null, lyrics: null, gloss: null, items: [], i
 function showEmpty(msg) { $("#lyrics").innerHTML = `<div class="empty">${esc(msg)}</div>`; current.items = []; }
 async function loadTrack(meta) {
   const id = ++current.loadId;
+  commitPending();
   Object.assign(current, { key: meta.key, meta, lyrics: null, gloss: null, idx: -2 }); loadKeyframes(meta.key);
   $("#hTitle").textContent = meta.title; $("#hArtist").textContent = meta.artist;
   setBackground(meta.image); showEmpty("Suche Liedtext …"); setStatus("");
@@ -588,6 +603,7 @@ async function seekRaw(ms) {          // ms = position in the recording
 }
 const seekTo = (lyricMs) => seekRaw(lyricToRaw(lyricMs));
 function syncTo(lineT) {              // the user says: this line is being sung right now
+  clearTimeout(pendingTimer); pending = null;
   const r = clock.raw(), off = lineT + 120 - r - cfg.offsetMs; setKeyframe(r, off);
   setStatus(`Synchron-Punkt gesetzt (${fmtOff(off)}) – wird für diesen Song gespeichert`);
   navigator.vibrate?.(30);
@@ -604,8 +620,10 @@ async function skip(dir) {
 }
 $("#btnPlay").onclick = togglePlay;
 function nudge(ms) {                  // + = text comes earlier, − = later; saved for this song
-  const r = clock.raw(), off = offAt(r) + ms; setKeyframe(r, off);
-  setStatus(`Synchron-Punkt bei ${fmt(r)}: ${fmtOff(off)}`);
+  const r = clock.raw(), off = offAt(r) + ms;
+  pending = [Math.round(r), Math.round(off)]; current.idx = -2;
+  clearTimeout(pendingTimer); pendingTimer = setTimeout(commitPending, 4000);
+  setStatus(`Timing ${fmtOff(off)} …`, true);
 }
 $("#nudgeMinus").onclick = () => nudge(-1000);
 $("#nudgePlus").onclick = () => nudge(1000);
@@ -633,7 +651,7 @@ function applyToggles() { $("#optCover").checked = cfg.cover; document.body.clas
 $("#optLat").onchange = (e) => { cfg.lat = e.target.checked; saveCfg(); applyToggles(); };
 $("#optDe").onchange = (e) => { cfg.de = e.target.checked; saveCfg(); applyToggles(); };
 const showOff = () => $("#kfInfo").textContent = kfs.length ? kfs.map(([r, o]) => `${fmt(r)} ${fmtOff(o)}`).join(" · ") : "keine – Original-Timing";
-$("#kfReset").onclick = () => { kfs = []; saveKeyframes(); store.del("off:" + current.key); current.idx = -2; showOff(); setStatus("Timing zurückgesetzt"); };
+$("#kfReset").onclick = () => { clearTimeout(pendingTimer); pending = null; kfs = []; saveKeyframes(); store.del("off:" + current.key); current.idx = -2; showOff(); setStatus("Timing zurückgesetzt"); };
 $("#sKey").onchange = () => { cfg.apiKey = $("#sKey").value.trim(); saveCfg(); if (current.meta && current.lyrics && !current.gloss) loadTrack(current.meta); };
 $("#sCode").onchange = async () => { cfg.code = $("#sCode").value.trim(); saveCfg(); if (await unlockLibrary(cfg.code) && current.meta) loadTrack(current.meta); };
 $("#sModel").onchange = () => { cfg.model = $("#sModel").value; saveCfg(); };

@@ -114,7 +114,8 @@
     <h3>Verbindung</h3>
     <div class="group">
       <div class="item"><span>Spotify<small id="spState">nicht verbunden</small></span><button class="pill green" id="btnSpotify">Verbinden</button></div>
-      <label class="item"><span>Claude Key</span><input type="password" id="sKey" placeholder="sk-ant-…" autocomplete="off"></label>
+      <label class="item"><span>Zugangscode<small id="libState">Playlist-Übersetzungen ohne API Key</small></span><input type="password" id="sCode" placeholder="Code" autocomplete="off"></label>
+      <label class="item"><span>Claude Key<small>nur für Songs außerhalb der Playlist</small></span><input type="password" id="sKey" placeholder="sk-ant-…" autocomplete="off"></label>
       <label class="item"><span>Modell</span><select id="sModel">
         <option value="claude-opus-5-5">Opus 5.5</option>
         <option value="claude-sonnet-5-5">Sonnet 5.5</option>
@@ -225,7 +226,7 @@ async function sp(path, opts = {}) {
   if (!r.ok) { let m = r.status; try { m = (await r.json()).error?.message || m; } catch {} throw new Error("Spotify: " + m); }
   const t = await r.text(); return t ? JSON.parse(t) : null;
 }
-const metaOf = (it) => ({ key: "sp:" + it.id, title: it.name, artist: it.artists.map(a => a.name).join(", "),
+const metaOf = (it) => ({ key: "sp:" + it.id, ids: [it.id, it.linked_from?.id].filter(Boolean), title: it.name, artist: it.artists.map(a => a.name).join(", "),
   firstArtist: it.artists[0]?.name || "", album: it.album?.name || "", durationMs: it.duration_ms,
   image: it.album?.images?.at(-1)?.url || it.album?.images?.[0]?.url || "" });
 
@@ -250,7 +251,8 @@ async function prefetchNext(key) {
   try {
     const it = (await sp("/me/player/queue"))?.queue?.[0];
     if (!it?.id || it.type !== "track") return;
-    const meta = metaOf(it), lyr = await findLyrics(meta);
+    const meta = metaOf(it); if (libEntry(meta)) return;
+    const lyr = await findLyrics(meta);
     if (lyr?.lines?.length) await glossLyrics(meta, lyr);
   } catch (e) { console.warn("prefetch", e); }
 }
@@ -372,6 +374,24 @@ function glossLyrics(meta, lyrics, onProgress) {
   })();
 }
 
+/* ---------- pre-translated playlist library (encrypted, unlocked with an access code) ---------- */
+const library = { map: null, count: 0 };
+async function unlockLibrary(code) {
+  if (!code) return false;
+  try {
+    const buf = new Uint8Array(await (await fetch("library.enc", { cache: "no-cache" })).arrayBuffer());
+    const salt = buf.slice(0, 16), iv = buf.slice(16, 28), data = buf.slice(28);
+    const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(code), "PBKDF2", false, ["deriveKey"]);
+    const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
+    const json = await new Response(new Blob([plain]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    library.map = JSON.parse(json); library.count = Object.keys(library.map).length;
+    $("#libState").textContent = library.count + " Songs freigeschaltet";
+    return true;
+  } catch (e) { console.warn("library", e); $("#libState").textContent = "Code falsch oder Bibliothek nicht erreichbar"; return false; }
+}
+const libEntry = (meta) => library.map && (meta.ids || []).map(id => library.map[id]).find(Boolean);
+
 /* ---------- track loading ---------- */
 const current = { key: null, meta: null, lyrics: null, gloss: null, items: [], idx: -2, loadId: 0 };
 function showEmpty(msg) { $("#lyrics").innerHTML = `<div class="empty">${esc(msg)}</div>`; current.items = []; }
@@ -381,6 +401,11 @@ async function loadTrack(meta) {
   $("#hTitle").textContent = meta.title; $("#hArtist").textContent = meta.artist;
   setBackground(meta.image); showEmpty("Suche Liedtext …"); setStatus("");
   window.scrollTo({ top: 0 });
+  const lib = libEntry(meta);
+  if (lib) {
+    current.lyrics = { id: "lib", synced: lib.synced, lines: lib.lines.map(([t, text]) => ({ t, text })) };
+    current.gloss = { summary: lib.summary, byText: lib.byText }; render(); return;
+  }
   let lyrics;
   try { lyrics = await findLyrics(meta); } catch (e) { if (id === current.loadId) showEmpty("Liedtext-Suche fehlgeschlagen."); return; }
   if (id !== current.loadId) return;
@@ -474,11 +499,12 @@ const showOff = () => $("#offVal").textContent = (cfg.offsetMs >= 0 ? "+" : "") 
 $("#offMinus").onclick = () => { cfg.offsetMs -= 250; saveCfg(); showOff(); };
 $("#offPlus").onclick = () => { cfg.offsetMs += 250; saveCfg(); showOff(); };
 $("#sKey").onchange = () => { cfg.apiKey = $("#sKey").value.trim(); saveCfg(); if (current.meta && current.lyrics && !current.gloss) loadTrack(current.meta); };
+$("#sCode").onchange = async () => { cfg.code = $("#sCode").value.trim(); saveCfg(); if (await unlockLibrary(cfg.code) && current.meta) loadTrack(current.meta); };
 $("#sModel").onchange = () => { cfg.model = $("#sModel").value; saveCfg(); };
 $("#btnSpotify").onclick = () => spotifyLogin();
 $("#btnClearCache").onclick = (e) => { e.preventDefault(); store.keys("gloss2:").forEach(store.del); $("#cacheInfo").textContent = "0 Songs gespeichert"; };
 $("#btnSettings").onclick = () => {
-  $("#sKey").value = cfg.apiKey; $("#sModel").value = cfg.model; showOff(); updateSpState();
+  $("#sKey").value = cfg.apiKey; $("#sCode").value = cfg.code || ""; $("#sModel").value = cfg.model; showOff(); updateSpState();
   $("#cacheInfo").textContent = store.keys("gloss2:").length + " Songs gespeichert"; $("#settings").showModal();
 };
 $("#settings").addEventListener("click", (e) => { if (e.target === $("#settings")) $("#settings").close(); });   // tap outside closes
@@ -505,9 +531,12 @@ $("#q").addEventListener("keydown", async (e) => {
 
 (async function init() {
   applyToggles();
+  const hc = new URLSearchParams(location.hash.slice(1)).get("code");
+  if (hc) { cfg.code = hc; saveCfg(); history.replaceState(null, "", location.pathname + location.search); }
+  if (cfg.code && await unlockLibrary(cfg.code)) setStatus(library.count + " Songs aus deiner Playlist bereit");
   await handleRedirect();
   if (tok) { startPolling(); showEmpty("Starte einen Song in Spotify."); }
-  if (tok && !cfg.apiKey) setStatus("Tipp: Claude Key in den Einstellungen eintragen", true);
+  if (tok && !cfg.apiKey && !library.map) setStatus("Tipp: Zugangscode in den Einstellungen eintragen", true);
   document.addEventListener("click", requestWakeLock, { once: true });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   requestAnimationFrame(tick);

@@ -147,8 +147,8 @@
     </div>
     <h3>Timing</h3>
     <div class="group">
-      <div class="item"><span>Versatz für diesen Song<small>Tipp: Zeile lange drücken, wenn sie gerade gesungen wird</small></span>
-        <button class="pill" id="offMinus">−</button><span id="offVal" style="flex:none;width:58px;text-align:center">0,00 s</span><button class="pill" id="offPlus">+</button></div>
+      <div class="item"><span>Synchron-Punkte für diesen Song<small id="kfInfo">Mit ±1 s oder Zeile lange drücken setzen</small></span>
+        <button class="pill" id="kfReset">Zurücksetzen</button></div>
     </div>
     <h3>Ohne Spotify</h3>
     <div class="group">
@@ -207,13 +207,45 @@ function stressHtml(w) {
 /* ---------- playback clock ---------- */
 const clock = {
   source: "none", baseMs: 0, basePerf: 0, playing: false, durationMs: 0,
-  now() { return (this.playing ? this.baseMs + performance.now() - this.basePerf : this.baseMs) + cfg.offsetMs + songOff; },
+  raw() { return this.playing ? this.baseMs + performance.now() - this.basePerf : this.baseMs; },   // position in the recording
+  now() { const r = this.raw(); return r + cfg.offsetMs + offAt(r); },                                    // position in the lyric file
   set(ms, playing) { this.baseMs = ms; this.basePerf = performance.now(); this.playing = playing; },
 };
 
-let songOff = 0;   // per-song timing correction, saved under "off:<track>"
-const loadSongOff = (key) => { songOff = store.get("off:" + key, 0); };
-const saveSongOff = (v) => { songOff = Math.round(v); if (current.key) store.set("off:" + current.key, songOff); };
+/* ---------- per-song timing keyframes ----------
+   Every correction leaves a keyframe [songPosition, offset]. Between two keyframes the offset changes —
+   inside the longest instrumental gap if there is one (an interlude of different length), otherwise gradually.
+   Before the first / after the last keyframe the offset stays constant. Saved per song under "kf:<track>". */
+let kfs = [];
+function loadKeyframes(key) {
+  kfs = store.get("kf:" + key, null);
+  if (!kfs) { const old = store.get("off:" + key, 0); kfs = old ? [[0, old]] : []; }   // migrate old single offset
+}
+const saveKeyframes = () => { if (current.key) store.set("kf:" + current.key, kfs); };
+function offAt(r) {
+  if (!kfs.length) return 0;
+  if (r <= kfs[0][0]) return kfs[0][1];
+  const last = kfs[kfs.length - 1]; if (r >= last[0]) return last[1];
+  let j = 0; while (kfs[j + 1][0] < r) j++;
+  const [r1, o1] = kfs[j], [r2, o2] = kfs[j + 1];
+  let a = r1, b = r2;                       // window in which the offset moves from o1 to o2
+  const g = cfg.offsetMs, its = (current.items || []).filter(x => !x.pause);
+  let best = 0;
+  for (let k = 0; k + 1 < its.length; k++) {   // longest gap between sung lines inside [r1, r2] (song time)
+    const end = its[k].t + Math.min(its[k + 1].t - its[k].t, syllablesOf(its[k].words) * 450 + 800) - g - o1;
+    const nxt = its[k + 1].t - g - o2;
+    if (end >= r1 && nxt <= r2 && nxt - end > best) { best = nxt - end; a = end; b = nxt; }
+  }
+  if (best < 4000) { a = r1; b = r2; }
+  if (r <= a) return o1; if (r >= b) return o2;
+  return o1 + (o2 - o1) * (r - a) / (b - a);
+}
+function setKeyframe(r, off) {
+  r = Math.max(0, Math.round(r)); off = Math.round(off);
+  kfs = kfs.filter(([x]) => Math.abs(x - r) > 8000);          // a nearby keyframe is replaced
+  kfs.push([r, off]); kfs.sort((x, y) => x[0] - y[0]); saveKeyframes(); current.idx = -2;
+}
+const fmtOff = (o) => (o >= 0 ? "+" : "") + (o / 1000).toFixed(1).replace(".", ",") + " s";
 
 /* ---------- Spotify (PKCE) ---------- */
 const REDIRECT = location.origin + location.pathname;
@@ -433,26 +465,36 @@ const current = { key: null, meta: null, lyrics: null, gloss: null, items: [], i
 function showEmpty(msg) { $("#lyrics").innerHTML = `<div class="empty">${esc(msg)}</div>`; current.items = []; }
 async function loadTrack(meta) {
   const id = ++current.loadId;
-  Object.assign(current, { key: meta.key, meta, lyrics: null, gloss: null, idx: -2 }); loadSongOff(meta.key);
+  Object.assign(current, { key: meta.key, meta, lyrics: null, gloss: null, idx: -2 }); loadKeyframes(meta.key);
   $("#hTitle").textContent = meta.title; $("#hArtist").textContent = meta.artist;
   setBackground(meta.image); showEmpty("Suche Liedtext …"); setStatus("");
   window.scrollTo({ top: 0 });
   const lib = libEntry(meta);
   if (lib) {
-    current.lyrics = { id: "lib", synced: lib.synced, lines: lib.lines.map(([t, text]) => ({ t, text })) };
+    current.lyrics = estimateTiming({ id: "lib", synced: lib.synced, lines: lib.lines.map(([t, text]) => ({ t, text })) }, meta.durationMs);
     current.gloss = { summary: lib.summary, byText: lib.byText }; render(); return;
   }
   let lyrics;
   try { lyrics = await findLyrics(meta); } catch (e) { if (id === current.loadId) showEmpty("Liedtext-Suche fehlgeschlagen."); return; }
   if (id !== current.loadId) return;
   if (!lyrics?.lines?.length) { showEmpty(lyrics?.instrumental ? "Instrumental ♪" : "Für diesen Song gibt es leider keinen Liedtext."); return; }
-  current.lyrics = lyrics; render();
+  current.lyrics = estimateTiming(lyrics, meta.durationMs); render();
   try {
     if (!store.get("gloss2:" + (lyrics.id ?? meta.key), null) && cfg.apiKey) setStatus("Übersetze …", true);
     const g = await glossLyrics(meta, lyrics, (d, n) => n > 1 && setStatus(`Übersetze … ${d}/${n}`, true));
     if (id !== current.loadId) return;
     current.gloss = g; setStatus(""); render();
   } catch (e) { if (id === current.loadId) setStatus(e.message, true); }
+}
+
+/* lyrics without timestamps: spread the lines over the song by syllables (intro/outro left free) */
+function estimateTiming(lyrics, dur) {
+  if (lyrics.synced) return lyrics;
+  const L = lyrics.lines; if (!dur) dur = L.length * 3500 + 25000;
+  const start = Math.min(20000, Math.max(6000, dur * 0.07)), stop = dur - Math.min(15000, Math.max(4000, dur * 0.05));
+  const w = L.map(l => l.text ? 2 + l.text.split(/\s+/).reduce((a, x) => a + syllables(x), 0) : 6), total = w.reduce((a, b) => a + b, 0);
+  let acc = 0;
+  return { ...lyrics, synced: true, estimated: true, lines: L.map((l, i) => { const t = start + (stop - start) * acc / total; acc += w[i]; return { t: Math.round(t), text: l.text }; }) };
 }
 
 /* ---------- rendering: lines split into rows of max 5 words ---------- */
@@ -489,7 +531,7 @@ function render() {
     el.addEventListener("contextmenu", (e) => e.preventDefault());
     el.onclick = () => { if (!long && synced) seekTo(items[+el.dataset.k].t + 1); };
   });
-  if (!synced) setStatus("Für diesen Song gibt es nur Text ohne Timing", true);
+  if (current.lyrics.estimated) setStatus("Timing geschätzt – mit ±1 s anpassen, die App merkt es sich", true);
 }
 const syllablesOf = (words) => words.reduce((a, w) => a + syllables(w.ru), 0);
 
@@ -527,15 +569,17 @@ function tick() {
 /* ---------- controls ---------- */
 const PLAY = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
 const PAUSE = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>';
-const rawPos = () => clock.now() - cfg.offsetMs - songOff;          // position in the recording itself
+const rawPos = () => clock.raw();
+function lyricToRaw(ms) { let r = ms - cfg.offsetMs; for (let i = 0; i < 3; i++) r = ms - cfg.offsetMs - offAt(r); return r; }
 const spCmd = (path, method = "PUT") => sp(path, { method }).catch(e => setStatus(e.message.includes("Premium") ? "Steuerung braucht Spotify Premium" : e.message));
-async function seekTo(ms) {           // ms = lyric time
-  ms = Math.max(0, Math.round(ms - cfg.offsetMs - songOff)); clock.set(ms, clock.playing); userScrollUntil = 0; ignorePollUntil = performance.now() + 1500;
+async function seekRaw(ms) {          // ms = position in the recording
+  ms = Math.max(0, Math.round(ms)); clock.set(ms, clock.playing); userScrollUntil = 0; ignorePollUntil = performance.now() + 1500;
   if (clock.source === "spotify") await spCmd(`/me/player/seek?position_ms=${ms}`);
 }
+const seekTo = (lyricMs) => seekRaw(lyricToRaw(lyricMs));
 function syncTo(lineT) {              // the user says: this line is being sung right now
-  saveSongOff(lineT + 120 - (clock.now() - songOff)); current.idx = -2;
-  setStatus(`Timing angepasst (${songOff >= 0 ? "+" : ""}${(songOff / 1000).toFixed(1).replace(".", ",")} s) – gilt für diesen Song`);
+  const r = clock.raw(), off = lineT + 120 - r - cfg.offsetMs; setKeyframe(r, off);
+  setStatus(`Synchron-Punkt gesetzt (${fmtOff(off)}) – wird für diesen Song gespeichert`);
   navigator.vibrate?.(30);
 }
 function togglePlay() {
@@ -543,16 +587,15 @@ function togglePlay() {
   if (clock.source === "spotify") spCmd(`/me/player/${was ? "pause" : "play"}`);
 }
 async function skip(dir) {
-  if (clock.source === "local") { seekTo(dir > 0 ? clock.durationMs : 0); return; }
-  if (dir < 0 && rawPos() > 3000) { seekTo(cfg.offsetMs + songOff); return; }      // like Spotify: back = restart song first
+  if (clock.source === "local") { seekRaw(dir > 0 ? clock.durationMs : 0); return; }
+  if (dir < 0 && rawPos() > 3000) { seekRaw(0); return; }      // like Spotify: back = restart song first
   await spCmd(`/me/player/${dir > 0 ? "next" : "previous"}`, "POST");
   setTimeout(pollSpotify, 350); setTimeout(pollSpotify, 1000);
 }
 $("#btnPlay").onclick = togglePlay;
 function nudge(ms) {                  // + = text comes earlier, − = later; saved for this song
-  saveSongOff(songOff + ms); current.idx = -2;
-  const v = (songOff >= 0 ? "+" : "") + (songOff / 1000).toFixed(1).replace(".", ",");
-  setStatus(songOff === 0 ? "Timing: Original" : `Timing für diesen Song: ${v} s`);
+  const r = clock.raw(), off = offAt(r) + ms; setKeyframe(r, off);
+  setStatus(`Synchron-Punkt bei ${fmt(r)}: ${fmtOff(off)}`);
 }
 $("#nudgeMinus").onclick = () => nudge(-1000);
 $("#nudgePlus").onclick = () => nudge(1000);
@@ -564,7 +607,7 @@ $("#btnPrev").onclick = () => skip(-1);
   const pos = (e) => Math.min(1, Math.max(0, (e.clientX - bar.getBoundingClientRect().left) / bar.offsetWidth));
   bar.addEventListener("pointerdown", (e) => { drag = true; bar.setPointerCapture(e.pointerId); $("#fill").style.width = pos(e) * 100 + "%"; });
   bar.addEventListener("pointermove", (e) => { if (drag) $("#fill").style.width = pos(e) * 100 + "%"; });
-  bar.addEventListener("pointerup", (e) => { if (!drag) return; drag = false; seekTo(pos(e) * clock.durationMs + cfg.offsetMs + songOff); });
+  bar.addEventListener("pointerup", (e) => { if (!drag) return; drag = false; seekRaw(pos(e) * clock.durationMs); });
   window.barDragging = () => drag;
 })();
 document.addEventListener("keydown", (e) => {
@@ -579,9 +622,8 @@ $("#optCover").onchange = (e) => { cfg.cover = e.target.checked; saveCfg(); setB
 function applyToggles() { $("#optCover").checked = cfg.cover; document.body.classList.toggle("no-lat", !cfg.lat); document.body.classList.toggle("no-de", !cfg.de); $("#optLat").checked = cfg.lat; $("#optDe").checked = cfg.de; }
 $("#optLat").onchange = (e) => { cfg.lat = e.target.checked; saveCfg(); applyToggles(); };
 $("#optDe").onchange = (e) => { cfg.de = e.target.checked; saveCfg(); applyToggles(); };
-const showOff = () => $("#offVal").textContent = (songOff >= 0 ? "+" : "") + (songOff / 1000).toFixed(2).replace(".", ",") + " s";
-$("#offMinus").onclick = () => { saveSongOff(songOff - 250); current.idx = -2; showOff(); };
-$("#offPlus").onclick = () => { saveSongOff(songOff + 250); current.idx = -2; showOff(); };
+const showOff = () => $("#kfInfo").textContent = kfs.length ? kfs.map(([r, o]) => `${fmt(r)} ${fmtOff(o)}`).join(" · ") : "keine – Original-Timing";
+$("#kfReset").onclick = () => { kfs = []; saveKeyframes(); store.del("off:" + current.key); current.idx = -2; showOff(); setStatus("Timing zurückgesetzt"); };
 $("#sKey").onchange = () => { cfg.apiKey = $("#sKey").value.trim(); saveCfg(); if (current.meta && current.lyrics && !current.gloss) loadTrack(current.meta); };
 $("#sCode").onchange = async () => { cfg.code = $("#sCode").value.trim(); saveCfg(); if (await unlockLibrary(cfg.code) && current.meta) loadTrack(current.meta); };
 $("#sModel").onchange = () => { cfg.model = $("#sModel").value; saveCfg(); };

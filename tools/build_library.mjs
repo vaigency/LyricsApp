@@ -12,14 +12,17 @@ const parseLRC = (lrc) => {
   }
   return out.sort((a, b) => a[0] - b[0]);
 };
-const lib = {}; let missing = 0;
+const titles = fs.existsSync(`${dir}/titles.json`) ? JSON.parse(fs.readFileSync(`${dir}/titles.json`, "utf8")) : {};
+const lib = {}; let missing = 0, order = 0;
 for (const t of tracks) {
+  order++;
   if (!t.synced && !t.plain) continue;
   const id = t.uri.split(":").pop(), f = `${dir}/out/${id}.json`;
   if (!fs.existsSync(f)) { console.log("no translation:", t.artist, "—", t.title); missing++; continue; }
   const g = JSON.parse(fs.readFileSync(f, "utf8"));
   const lines = t.synced ? parseLRC(t.synced) : t.plain.split(/\r?\n/).map((x, i) => [i * 4000, x.trim()]);
-  lib[id] = { title: t.title, artist: t.artist, synced: !!t.synced, lines, summary: g.summary, byText: g.lines };
+  const [titleLat, titleDe] = titles[t.title] || ["", ""];
+  lib[id] = { title: t.title, artist: t.artist, order, titleLat, titleDe, synced: !!t.synced, lines, summary: g.summary, byText: g.lines };
 }
 const gz = zlib.gzipSync(Buffer.from(JSON.stringify(lib)), { level: 9 });
 const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));

@@ -39,7 +39,29 @@
   .icon-btn { position: fixed; z-index: 6; top: calc(12px + var(--safe-t)); right: 14px; width: 40px; height: 40px;
     border-radius: 50%; border: 0; background: rgba(255,255,255,.1); display: grid; place-items: center; cursor: pointer; }
   .icon-btn:active { transform: scale(.94); }
-  .status { position: fixed; z-index: 5; left: 50%; transform: translateX(-50%); top: calc(74px + var(--safe-t));
+  .icon-btn.left { right: auto; left: 14px; }
+  header .tt { font-size: 13px; color: var(--de); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  header .tt .tl { color: var(--soft); }
+  body.no-lat header .tl, body.no-de header .td, body.no-lat header .dot, body.no-de header .dot { display: none; }
+
+  /* library overview */
+  .lib { position: fixed; inset: 0; z-index: 20; background: #0c0c0e; overflow: auto; transform: translateY(100%); transition: transform .28s ease; }
+  .lib.open { transform: none; }
+  .lib-head { position: sticky; top: 0; background: #0c0c0e; padding: calc(14px + var(--safe-t)) 16px 10px; display: flex; align-items: center; gap: 10px; z-index: 1; }
+  .lib-head h2 { flex: 1; margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -.01em; }
+  .lib-head small { display: block; font-size: 13px; font-weight: 500; color: rgba(255,255,255,.5); letter-spacing: 0; }
+  .lib-search { margin: 0 16px 6px; width: calc(100% - 32px); background: rgba(255,255,255,.08); border: 0; outline: 0; border-radius: 10px; padding: 10px 12px; }
+  .song { display: flex; gap: 12px; align-items: center; padding: 10px 16px; cursor: pointer; }
+  .song:active { background: rgba(255,255,255,.06); }
+  .song .n { width: 22px; text-align: right; font-size: 13px; color: rgba(255,255,255,.4); font-variant-numeric: tabular-nums; flex: none; }
+  .song .b { flex: 1; min-width: 0; }
+  .song .st1 { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .song .st2 { font-size: 13px; color: var(--de); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .song .st2 .tl { color: rgba(255,255,255,.55); }
+  .song .st3 { font-size: 13px; color: rgba(255,255,255,.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .song.now .st1 { color: #1ed760; }
+  .lib-sec { padding: 18px 16px 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: rgba(255,255,255,.45); }
+  .status { position: fixed; z-index: 5; left: 50%; transform: translateX(-50%); top: calc(94px + var(--safe-t));
     font-size: 13px; color: #fff; background: rgba(20,20,22,.88); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); padding: 6px 14px; border-radius: 999px;
     max-width: calc(100vw - 32px); text-align: center; transition: opacity .3s; }
   .status:empty { opacity: 0; }
@@ -110,7 +132,16 @@
 </style>
 </head>
 <body>
-<header><div class="t" id="hTitle">Подстрочник</div><div class="a" id="hArtist">Russisch mitlesen</div></header>
+<header><div class="t" id="hTitle">Подстрочник</div><div class="tt" id="hTitleTr"></div><div class="a" id="hArtist">Russisch mitlesen</div></header>
+<button class="icon-btn left" id="btnLib" aria-label="Bibliothek">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4v16M9 4v16M14 5l5 15"/></svg>
+</button>
+<div class="lib" id="lib">
+  <div class="lib-head"><h2>Bibliothek<small id="libCount"></small></h2>
+    <button class="icon-btn" style="position:static" id="libClose" aria-label="Schließen"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <input class="lib-search" id="libSearch" type="search" placeholder="Suchen">
+  <div id="libList"></div>
+</div>
 <button class="icon-btn" id="btnSettings" aria-label="Einstellungen">
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
 </button>
@@ -429,9 +460,10 @@ Für jede Eingabezeile:
   - "de": Bedeutung des Wortes in DIESEM Kontext, 1–3 Wörter. Feste Wendungen: Bedeutung beim ersten Wort, bei den folgenden "↑".
 - "i": die Zeilennummer aus der Eingabe.
 "summary": 2–3 Sätze auf Deutsch: worum es im Song geht und welche Stimmung er hat.
+"title_lat" / "title_de": Aussprache (wie bei "lat") und deutsche Übersetzung des Songtitels; leer, wenn der Titel nicht russisch ist.
 Gib für jede Eingabezeile genau einen Eintrag zurück. Nicht-russische Zeilen trotzdem übersetzen.`;
-const SCHEMA = { type: "object", additionalProperties: false, required: ["summary", "lines"], properties: {
-  summary: { type: "string" },
+const SCHEMA = { type: "object", additionalProperties: false, required: ["summary", "title_lat", "title_de", "lines"], properties: {
+  summary: { type: "string" }, title_lat: { type: "string" }, title_de: { type: "string" },
   lines: { type: "array", items: { type: "object", additionalProperties: false, required: ["i", "de", "words"], properties: {
     i: { type: "integer" }, de: { type: "string" },
     words: { type: "array", items: { type: "object", additionalProperties: false, required: ["ru", "stress", "lat", "de"],
@@ -463,7 +495,7 @@ function glossLyrics(meta, lyrics, onProgress) {
       const res = await Promise.all(chunks.map(c => callClaude(meta, c).then(r => { onProgress?.(++done, chunks.length); return r; })));
       const byText = {};
       for (const r of res) for (const l of r.lines) if (uniq[l.i] != null) byText[uniq[l.i]] = { de: l.de, words: l.words };
-      const out = { summary: res.map(r => r.summary).find(Boolean) || "", byText };
+      const out = { summary: res.map(r => r.summary).find(Boolean) || "", titleLat: res[0]?.title_lat || "", titleDe: res[0]?.title_de || "", byText };
       store.set(ck, out); return out;
     } finally { delete inflight[ck]; }
   })();
@@ -487,6 +519,16 @@ async function unlockLibrary(code) {
 }
 const libEntry = (meta) => library.map && (meta.ids || []).map(id => library.map[id]).find(Boolean);
 
+function showTitleTr(lat, de) {
+  $("#hTitleTr").innerHTML = (lat || de) ? `<span class="tl">${esc(lat)}</span>${lat && de ? '<span class="dot"> · </span>' : ""}<span class="td">${esc(de)}</span>` : "";
+}
+function rememberSong(meta, g) {      // songs translated on this device show up in the library too
+  if (!meta.ids?.[0]) return;
+  const list = store.get("mysongs", {});
+  list[meta.ids[0]] = { title: meta.title, artist: meta.artist, titleLat: g?.titleLat || "", titleDe: g?.titleDe || "", at: Date.now() };
+  store.set("mysongs", list);
+}
+
 /* ---------- track loading ---------- */
 const current = { key: null, meta: null, lyrics: null, gloss: null, items: [], idx: -2, loadId: 0 };
 function showEmpty(msg) { $("#lyrics").innerHTML = `<div class="empty">${esc(msg)}</div>`; current.items = []; }
@@ -494,13 +536,13 @@ async function loadTrack(meta) {
   const id = ++current.loadId;
   commitPending();
   Object.assign(current, { key: meta.key, meta, lyrics: null, gloss: null, idx: -2 }); loadKeyframes(meta.key);
-  $("#hTitle").textContent = meta.title; $("#hArtist").textContent = meta.artist;
+  $("#hTitle").textContent = meta.title; $("#hArtist").textContent = meta.artist; showTitleTr("", "");
   setBackground(meta.image); showEmpty("Suche Liedtext …"); setStatus("");
   window.scrollTo({ top: 0 });
   const lib = libEntry(meta);
   if (lib) {
     current.lyrics = estimateTiming({ id: "lib", synced: lib.synced, lines: lib.lines.map(([t, text]) => ({ t, text })) }, meta.durationMs);
-    current.gloss = { summary: lib.summary, byText: lib.byText }; render(); return;
+    current.gloss = { summary: lib.summary, byText: lib.byText }; showTitleTr(lib.titleLat, lib.titleDe); render(); markNow(); return;
   }
   let lyrics;
   try { lyrics = await findLyrics(meta); } catch (e) { if (id === current.loadId) showEmpty("Liedtext-Suche fehlgeschlagen."); return; }
@@ -511,7 +553,7 @@ async function loadTrack(meta) {
     if (!store.get("gloss2:" + (lyrics.id ?? meta.key), null) && cfg.apiKey) setStatus("Übersetze …", true);
     const g = await glossLyrics(meta, lyrics, (d, n) => n > 1 && setStatus(`Übersetze … ${d}/${n}`, true));
     if (id !== current.loadId) return;
-    current.gloss = g; setStatus(""); render();
+    current.gloss = g; setStatus(""); render(); showTitleTr(g.titleLat, g.titleDe); rememberSong(meta, g);
   } catch (e) { if (id === current.loadId) setStatus(e.message, true); }
 }
 
@@ -648,6 +690,48 @@ document.addEventListener("keydown", (e) => {
 });
 let wakeLock = null;
 async function requestWakeLock() { try { if ("wakeLock" in navigator && !document.hidden && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => wakeLock = null); } } catch {} }
+
+/* ---------- library overview ---------- */
+const PLAYLIST_URI = "spotify:playlist:6Oircds2P3DI8DJ976IC3w";
+function libSongs() {
+  const lib = Object.entries(library.map || {}).map(([id, e]) => ({ id, ...e, inLib: true })).sort((a, b) => a.order - b.order);
+  const mine = Object.entries(store.get("mysongs", {})).filter(([id]) => !library.map?.[id]).map(([id, e]) => ({ id, ...e })).sort((a, b) => b.at - a.at);
+  return { lib, mine };
+}
+function songRow(x, n) {
+  const tr = (x.titleLat || x.titleDe) ? `<div class="st2"><span class="tl">${esc(x.titleLat)}</span>${x.titleLat && x.titleDe ? " · " : ""}${esc(x.titleDe)}</div>` : "";
+  return `<div class="song" data-id="${esc(x.id)}" data-lib="${x.inLib ? 1 : 0}"><div class="n">${n}</div><div class="b"><div class="st1">${esc(x.title)}</div>${tr}<div class="st3">${esc(x.artist)}</div></div></div>`;
+}
+function renderLib() {
+  const q = $("#libSearch").value.trim().toLowerCase(), { lib, mine } = libSongs();
+  const f = (x) => !q || [x.title, x.artist, x.titleLat, x.titleDe].join(" ").toLowerCase().includes(q);
+  const a = lib.filter(f), b = mine.filter(f);
+  $("#libCount").textContent = library.map ? `${lib.length} Songs aus deiner Playlist` + (mine.length ? ` · ${mine.length} weitere` : "") : "Zugangscode in den Einstellungen eintragen";
+  $("#libList").innerHTML = (a.length ? a.map((x, i) => songRow(x, i + 1)).join("") : "")
+    + (b.length ? `<div class="lib-sec">Auf diesem Gerät übersetzt</div>` + b.map((x, i) => songRow(x, i + 1)).join("") : "")
+    + (!a.length && !b.length ? `<div class="lib-sec">Keine Songs gefunden</div>` : "");
+  $("#libList").querySelectorAll(".song").forEach(el => el.onclick = () => openSong(el.dataset.id, el.dataset.lib === "1"));
+  markNow();
+}
+function markNow() { const id = current.meta?.ids?.[0]; document.querySelectorAll("#libList .song").forEach(el => el.classList.toggle("now", el.dataset.id === id)); }
+async function openSong(id, inLib) {
+  $("#lib").classList.remove("open");
+  if (tok) {                          // play it in Spotify (inside the playlist, so the next songs follow); the lyrics follow by polling
+    const body = inLib ? { context_uri: PLAYLIST_URI, offset: { uri: "spotify:track:" + id } } : { uris: ["spotify:track:" + id] };
+    try {
+      await sp("/me/player/play", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      setTimeout(pollSpotify, 400); setTimeout(pollSpotify, 1200); return;
+    } catch (e) { setStatus(/active device|NO_ACTIVE_DEVICE|404/i.test(e.message) ? "Öffne Spotify kurz auf einem Gerät, dann nochmal tippen" : e.message); return; }
+  }
+  const e = library.map?.[id];        // without Spotify: show the lyrics with the built-in timer
+  if (!e) { setStatus("Zum Abspielen Spotify verbinden"); return; }
+  clearInterval(pollTimer); clock.source = "local"; document.body.classList.add("local", "playing-ui");
+  const dur = (e.lines.at(-1)?.[0] || 0) + 15000; clock.durationMs = dur; clock.set(0, false);
+  loadTrack({ key: "sp:" + id, ids: [id], title: e.title, artist: e.artist, firstArtist: e.artist, album: "", durationMs: dur, image: "" });
+}
+$("#btnLib").onclick = () => { $("#libSearch").value = ""; renderLib(); $("#lib").classList.add("open"); $("#lib").scrollTop = 0; };
+$("#libClose").onclick = () => $("#lib").classList.remove("open");
+$("#libSearch").oninput = renderLib;
 
 /* ---------- settings ---------- */
 $("#optCover").onchange = (e) => { cfg.cover = e.target.checked; saveCfg(); setBackground(current.meta?.image); };

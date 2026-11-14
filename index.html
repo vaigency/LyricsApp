@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#3b2350">
+<meta name="theme-color" content="#0c0c0e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Lyrics">
@@ -16,11 +16,11 @@
 <title>Подстрочник</title>
 <style>
   :root {
-    --bg: #3b2350;                 /* replaced by the album colour */
+    --bg: #0c0c0e;
     --ink: #ffffff;
-    --soft: rgba(255,255,255,.72);
+    --soft: rgba(255,255,255,.62);
     --faint: rgba(255,255,255,.42);
-    --de: #ffe2a6;
+    --de: #7db4ff;
     --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px);
     --ru: clamp(26px, 7.2vw, 46px);
   }
@@ -37,7 +37,7 @@
   header .t { font-weight: 800; font-size: 17px; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   header .a { font-size: 14px; color: var(--soft); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .icon-btn { position: fixed; z-index: 6; top: calc(12px + var(--safe-t)); right: 14px; width: 40px; height: 40px;
-    border-radius: 50%; border: 0; background: rgba(255,255,255,.12); display: grid; place-items: center; cursor: pointer; }
+    border-radius: 50%; border: 0; background: rgba(255,255,255,.1); display: grid; place-items: center; cursor: pointer; }
   .icon-btn:active { transform: scale(.94); }
   .status { position: fixed; z-index: 5; left: 50%; transform: translateX(-50%); top: calc(74px + var(--safe-t));
     font-size: 13px; color: var(--soft); background: rgba(0,0,0,.22); padding: 5px 12px; border-radius: 999px;
@@ -72,7 +72,7 @@
 
   /* ---------- settings sheet ---------- */
   dialog { border: 0; padding: 0; margin: auto auto 0; width: min(560px, 100vw); max-height: 88dvh;
-    border-radius: 22px 22px 0 0; background: #17171c; color: var(--ink); }
+    border-radius: 22px 22px 0 0; background: #1a1a1d; color: var(--ink); }
   @media (min-width: 700px) { dialog { margin: auto; border-radius: 22px; } }
   dialog::backdrop { background: rgba(0,0,0,.5); }
   .sheet { padding: 10px 20px calc(24px + var(--safe-b)); }
@@ -260,35 +260,6 @@ function startPolling() { updateSpState(); clearInterval(pollTimer); pollSpotify
 function updateSpState() { $("#spState").textContent = tok ? "verbunden" : "nicht verbunden"; $("#btnSpotify").textContent = tok ? "Neu verbinden" : "Verbinden"; }
 document.addEventListener("visibilitychange", () => { if (!document.hidden && clock.source === "spotify") pollSpotify(); requestWakeLock(); });
 
-/* ---------- album colour as background ---------- */
-function setBackground(url) {
-  const fallback = "#3b2350";
-  const apply = (c) => { document.documentElement.style.setProperty("--bg", c); document.querySelector('meta[name="theme-color"]').content = c; };
-  if (!url) return apply(fallback);
-  const img = new Image(); img.crossOrigin = "anonymous";
-  img.onload = () => {
-    try {
-      const c = document.createElement("canvas"); c.width = c.height = 16; const x = c.getContext("2d");
-      x.drawImage(img, 0, 0, 16, 16); const d = x.getImageData(0, 0, 16, 16).data;
-      let best = null, score = -1;               // pick the most colourful pixel, not the muddy average
-      for (let i = 0; i < d.length; i += 4) {
-        const [r, g, b] = [d[i], d[i + 1], d[i + 2]], mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-        const s = mx === 0 ? 0 : (mx - mn) / mx, v = mx / 255, sc = s * (0.4 + v);
-        if (sc > score) { score = sc; best = [r, g, b]; }
-      }
-      const [h, s] = rgbToHsl(...best);
-      apply(`hsl(${Math.round(h)} ${Math.round(Math.min(65, Math.max(28, s)))}% 24%)`);
-    } catch { apply(fallback); }
-  };
-  img.onerror = () => apply(fallback); img.src = url;
-}
-function rgbToHsl(r, g, b) {
-  r /= 255; g /= 255; b /= 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2; let h = 0, s = 0;
-  if (mx !== mn) { const d = mx - mn; s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn);
-    h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; }
-  return [h, s * 100, l * 100];
-}
-
 /* ---------- lyrics (LRCLIB) ---------- */
 const LRCLIB = "https://lrclib.net/api";
 function parseLRC(lrc) {
@@ -399,7 +370,7 @@ async function loadTrack(meta) {
   const id = ++current.loadId;
   Object.assign(current, { key: meta.key, meta, lyrics: null, gloss: null, idx: -2 });
   $("#hTitle").textContent = meta.title; $("#hArtist").textContent = meta.artist;
-  setBackground(meta.image); showEmpty("Suche Liedtext …"); setStatus("");
+  showEmpty("Suche Liedtext …"); setStatus("");
   window.scrollTo({ top: 0 });
   const lib = libEntry(meta);
   if (lib) {

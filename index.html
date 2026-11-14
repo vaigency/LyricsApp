@@ -99,7 +99,7 @@
   .line.active .w.sung { opacity: 1; }
   /* the line's meaning reads like another lyric line: white, a step quieter, same weight */
   .line .tr { font-size: .6em; font-weight: 700; letter-spacing: -.01em; color: rgba(255,255,255,.5); margin-top: .55em; line-height: 1.25; }
-  body.no-lat .lat, body.no-de .de, body.no-de .tr { display: none !important; }
+  body.no-lat .lat, body.no-de .w .de, body.no-tr .tr { display: none !important; }
   .pause { font-size: var(--ru); margin: 0 0 1.25em; letter-spacing: .3em; opacity: .4; font-weight: 800; }
   .pause.active { opacity: 1; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .45; } }
@@ -189,7 +189,8 @@
     <h3>Anzeige</h3>
     <div class="group">
       <label class="item"><span>Aussprache<small>Russisch in lateinischen Buchstaben</small></span><input type="checkbox" class="switch" id="optLat"></label>
-      <label class="item"><span>Übersetzung<small>Deutsche Bedeutung pro Wort und Zeile</small></span><input type="checkbox" class="switch" id="optDe"></label>
+      <label class="item"><span>Wortbedeutung<small>Deutsch unter jedem Wort</small></span><input type="checkbox" class="switch" id="optDe"></label>
+      <label class="item"><span>Satzübersetzung<small>Sinngemäß, unter jeder Zeile</small></span><input type="checkbox" class="switch" id="optTr"></label>
       <label class="item"><span>Farbe vom Album-Cover<small>wie bei Spotify; aus = Dark Mode</small></span><input type="checkbox" class="switch" id="optCover"></label>
     </div>
     <h3>Verbindung</h3>
@@ -229,7 +230,7 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch {} },
   keys(p) { try { return Object.keys(localStorage).filter(k => k.startsWith(p)); } catch { return []; } },
 };
-const cfg = Object.assign({ apiKey: "", model: "claude-opus-5-5", offsetMs: 0, lat: true, de: true, cover: true }, store.get("cfg", {}));
+const cfg = Object.assign({ apiKey: "", model: "claude-opus-5-5", offsetMs: 0, lat: true, de: true, tr: true, cover: true }, store.get("cfg", {}));
 const saveCfg = () => store.set("cfg", cfg);
 let statusTimer;
 function setStatus(msg, sticky = false) { const s = $("#status"); s.textContent = msg || ""; clearTimeout(statusTimer); if (msg && !sticky) statusTimer = setTimeout(() => s.textContent = "", 6000); }
@@ -872,9 +873,10 @@ $("#libSearch").oninput = renderLib;
 
 /* ---------- settings ---------- */
 $("#optCover").onchange = (e) => { cfg.cover = e.target.checked; saveCfg(); setBackground(current.meta?.image); };
-function applyToggles() { $("#optCover").checked = cfg.cover; document.body.classList.toggle("no-lat", !cfg.lat); document.body.classList.toggle("no-de", !cfg.de); $("#optLat").checked = cfg.lat; $("#optDe").checked = cfg.de; }
+function applyToggles() { $("#optCover").checked = cfg.cover; document.body.classList.toggle("no-lat", !cfg.lat); document.body.classList.toggle("no-de", !cfg.de); document.body.classList.toggle("no-tr", !cfg.tr); $("#optLat").checked = cfg.lat; $("#optDe").checked = cfg.de; $("#optTr").checked = cfg.tr; }
 $("#optLat").onchange = (e) => { cfg.lat = e.target.checked; saveCfg(); applyToggles(); requestAnimationFrame(() => fitLat()); };
 $("#optDe").onchange = (e) => { cfg.de = e.target.checked; saveCfg(); applyToggles(); };
+$("#optTr").onchange = (e) => { cfg.tr = e.target.checked; saveCfg(); applyToggles(); };
 const showOff = () => $("#kfInfo").textContent = kfs.length ? kfs.map(([r, o]) => `${fmt(r)} ${fmtOff(o)}`).join(" · ") : "keine – Original-Timing";
 $("#kfReset").onclick = () => { clearTimeout(pendingTimer); pending = null; kfs = []; setTimeout(updateBadge); saveKeyframes(); store.del("off:" + current.key); current.idx = -2; showOff(); setStatus("Timing zurückgesetzt"); };
 $("#sKey").onchange = () => { cfg.apiKey = $("#sKey").value.trim(); saveCfg(); if (current.meta && current.lyrics && !current.gloss) loadTrack(current.meta); };

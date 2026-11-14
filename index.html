@@ -214,12 +214,13 @@
       <label class="item"><span>Suchen</span><input type="search" id="q" placeholder="z. B. Vintage Eva" enterkeyhint="search"></label>
       <div class="results" id="results"></div>
     </div>
-    <p class="tiny"><span id="cacheInfo"></span> · <a href="#" id="btnClearCache" style="color:inherit">Übersetzungen löschen</a></p>
+    <p class="tiny">Version <span id="appVer"></span> · <span id="cacheInfo"></span> · <a href="#" id="btnClearCache" style="color:inherit">Übersetzungen löschen</a></p>
   </div>
 </dialog>
 
 <script>
 "use strict";
+const APP_VERSION = "24";
 const SPOTIFY_CLIENT_ID = "494e353046cc4d5caf383ef90d21ab60";
 
 /* ---------- storage ---------- */
@@ -886,6 +887,7 @@ $("#btnSpotify").onclick = () => spotifyLogin();
 $("#btnClearCache").onclick = (e) => { e.preventDefault(); store.keys("gloss2:").forEach(store.del); $("#cacheInfo").textContent = "0 Songs gespeichert"; };
 $("#btnSettings").onclick = () => {
   $("#sKey").value = cfg.apiKey; $("#sCode").value = cfg.code || ""; $("#sModel").value = cfg.model; showOff(); updateSpState();
+  $("#appVer").textContent = APP_VERSION;
   $("#cacheInfo").textContent = store.keys("gloss2:").length + " Songs gespeichert"; $("#settings").showModal();
 };
 $("#settings").addEventListener("click", (e) => { if (e.target === $("#settings")) $("#settings").close(); });   // tap outside closes

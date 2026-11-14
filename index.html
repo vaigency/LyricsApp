@@ -75,11 +75,11 @@
   .line.past { opacity: .32; }
   .line.active { opacity: 1; }
   .row { display: flex; flex-wrap: wrap; gap: .1em .38em; margin-bottom: .32em; }
-  .w { display: inline-flex; flex-direction: column; align-items: flex-start; }
+  .w { display: inline-flex; flex-direction: column; align-items: center; }
   .w .ru { font-weight: 800; letter-spacing: -.015em; line-height: 1.08; }
   .w .st { text-decoration: underline; text-decoration-thickness: .07em; text-underline-offset: .14em; }
-  .w .lat { font-size: .44em; font-weight: 500; color: var(--soft); line-height: 1.25; margin-top: .12em; }
-  .w .de { font-size: .4em; font-weight: 400; color: var(--de); line-height: 1.25; position: relative; white-space: nowrap; }
+  .w .lat { font-size: .58em; font-weight: 600; color: var(--soft); line-height: 1.2; margin-top: .1em; white-space: nowrap; }
+  .w .de { font-size: .4em; font-weight: 400; color: var(--de); line-height: 1.3; position: relative; white-space: nowrap; text-align: center; margin-top: .15em; }
   /* words of one fixed expression: the meaning sits on the first word, a line links the rest */
   .w .de.grp { color: transparent; align-self: stretch; }
   .w .de.grp::before { content: ""; position: absolute; left: -.75em; right: .1em; top: 58%; border-top: 2px solid var(--de); opacity: .55; border-radius: 2px; }
@@ -630,7 +630,7 @@ function render() {
     let markedPause = false; for (let j = i + 1; j < L.length && !isText(L[j].text); j++) if (isPause(j)) markedPause = true;
     if (synced && next - l.t > 12000 && !markedPause) { const t = l.t + Math.max(4000, syllablesOf(words) * 450 + 1500); items.push({ t, pause: true }); html += `<div class="pause" data-k="${items.length - 1}">• • •</div>`; }
   });
-  current.items = items; current.idx = -2; updateBadge(); paintLoop();
+  current.items = items; current.idx = -2; updateBadge(); paintLoop(); requestAnimationFrame(() => fitLat($("#lyrics")));
   const main = $("#lyrics"); main.innerHTML = html; main.classList.toggle("unsynced", !synced);
   main.querySelectorAll("[data-k]").forEach(el => {
     let timer = null, long = false;
@@ -641,6 +641,26 @@ function render() {
   });
   if (current.lyrics.estimated) setStatus("Timing geschätzt – gesungene Zeile lange drücken, die App merkt es sich", true);
 }
+/* make the pronunciation as wide as the Cyrillic word above it, so the letters line up */
+function fitLat(root = document) {
+  if (!cfg.lat) return;
+  root.querySelectorAll(".w").forEach(w => {
+    const ru = w.firstElementChild, lat = w.querySelector(".lat"); if (!lat) return;
+    lat.style.letterSpacing = lat.style.marginRight = lat.style.fontSize = "";
+    const rw = ru.getBoundingClientRect().width, lw = lat.getBoundingClientRect().width, n = [...lat.textContent].length;
+    if (!rw || !lw || !n) return;
+    const fs = parseFloat(getComputedStyle(lat).fontSize);
+    if (lw < rw) {                                       // shorter: grow the letters first, then a touch of spacing
+      const k = Math.min(rw / lw, 1.3), nfs = fs * k; lat.style.fontSize = nfs + "px";
+      const rest = rw - lw * k, ls = Math.max(0, Math.min(rest / n, nfs * 0.08));
+      if (ls) { lat.style.letterSpacing = ls + "px"; lat.style.marginRight = -ls + "px"; }
+    } else if (lw > rw) {                                // longer: shrink a little (the column may still grow)
+      lat.style.fontSize = fs * Math.max(0.74, rw / lw) + "px";
+    }
+  });
+}
+addEventListener("resize", () => fitLat());
+document.fonts?.ready.then(() => fitLat());
 const isCont = (w) => /^\s*[↑^]\s*$/.test(w.de || "");
 const syllablesOf = (words) => words.reduce((a, w) => a + syllables(w.ru), 0);
 
@@ -814,7 +834,7 @@ $("#libSearch").oninput = renderLib;
 /* ---------- settings ---------- */
 $("#optCover").onchange = (e) => { cfg.cover = e.target.checked; saveCfg(); setBackground(current.meta?.image); };
 function applyToggles() { $("#optCover").checked = cfg.cover; document.body.classList.toggle("no-lat", !cfg.lat); document.body.classList.toggle("no-de", !cfg.de); $("#optLat").checked = cfg.lat; $("#optDe").checked = cfg.de; }
-$("#optLat").onchange = (e) => { cfg.lat = e.target.checked; saveCfg(); applyToggles(); };
+$("#optLat").onchange = (e) => { cfg.lat = e.target.checked; saveCfg(); applyToggles(); requestAnimationFrame(() => fitLat()); };
 $("#optDe").onchange = (e) => { cfg.de = e.target.checked; saveCfg(); applyToggles(); };
 const showOff = () => $("#kfInfo").textContent = kfs.length ? kfs.map(([r, o]) => `${fmt(r)} ${fmtOff(o)}`).join(" · ") : "keine – Original-Timing";
 $("#kfReset").onclick = () => { clearTimeout(pendingTimer); pending = null; kfs = []; setTimeout(updateBadge); saveKeyframes(); store.del("off:" + current.key); current.idx = -2; showOff(); setStatus("Timing zurückgesetzt"); };

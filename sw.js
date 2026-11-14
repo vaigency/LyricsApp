@@ -1,5 +1,5 @@
 // Network-first for the app's own files, so updates arrive immediately; cached copy when offline.
-const CACHE = "podstrochnik-v19";
+const CACHE = "podstrochnik-v20";
 self.addEventListener("install", (e) => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener("fetch", (e) => {

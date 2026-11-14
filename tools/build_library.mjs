@@ -12,6 +12,7 @@ const parseLRC = (lrc) => {
   }
   return out.sort((a, b) => a[0] - b[0]);
 };
+const covers = fs.existsSync(`${dir}/covers.json`) ? JSON.parse(fs.readFileSync(`${dir}/covers.json`, "utf8")) : {};
 const titles = fs.existsSync(`${dir}/titles.json`) ? JSON.parse(fs.readFileSync(`${dir}/titles.json`, "utf8")) : {};
 const lib = {}; let missing = 0, order = 0;
 for (const t of tracks) {
@@ -22,7 +23,7 @@ for (const t of tracks) {
   const g = JSON.parse(fs.readFileSync(f, "utf8"));
   const lines = t.synced ? parseLRC(t.synced) : t.plain.split(/\r?\n/).map((x, i) => [i * 4000, x.trim()]);
   const [titleLat, titleDe] = titles[t.title] || ["", ""];
-  lib[id] = { title: t.title, artist: t.artist, order, titleLat, titleDe, synced: !!t.synced, lines, summary: g.summary, byText: g.lines };
+  lib[id] = { title: t.title, artist: t.artist, order, titleLat, titleDe, cover: covers[id] || "", synced: !!t.synced, lines, summary: g.summary, byText: g.lines };
 }
 const gz = zlib.gzipSync(Buffer.from(JSON.stringify(lib)), { level: 9 });
 const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));

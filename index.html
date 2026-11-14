@@ -53,7 +53,7 @@
   .lib-search { margin: 0 16px 6px; width: calc(100% - 32px); background: rgba(255,255,255,.08); border: 0; outline: 0; border-radius: 10px; padding: 10px 12px; }
   .song { display: flex; gap: 12px; align-items: center; padding: 10px 16px; cursor: pointer; }
   .song:active { background: rgba(255,255,255,.06); }
-  .song .n { width: 22px; text-align: right; font-size: 13px; color: rgba(255,255,255,.4); font-variant-numeric: tabular-nums; flex: none; }
+  .song .cv { width: 52px; height: 52px; border-radius: 4px; flex: none; object-fit: cover; background: rgba(255,255,255,.08); }
   .song .b { flex: 1; min-width: 0; }
   .song .st1 { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .song .st2 { font-size: 13px; color: var(--de); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -421,32 +421,37 @@ const cleanTitle = (t) => t.replace(/\s*[-–]\s*(remaster|live|version|radio|ed
 const recToLyrics = (x) => ({ id: x.id, instrumental: !!x.instrumental, synced: !!x.syncedLyrics,
   lines: x.syncedLyrics ? parseLRC(x.syncedLyrics) : (x.plainLyrics || "").split(/\r?\n/).map((text, i) => ({ t: i * 4000, text: text.trim() })) });
 async function findLyrics(m) {
-  const ck = "lyr:" + m.key, cached = store.get(ck, null);
+  const ck = "lyr2:" + m.key, cached = store.get(ck, null);
   if (cached) return cached;
-  const get = async (title) => {
-    const r = await fetch(`${LRCLIB}/get?` + new URLSearchParams({ track_name: title, artist_name: m.firstArtist || m.artist, album_name: m.album, duration: Math.round(m.durationMs / 1000) }));
-    return r.ok ? r.json() : null;
+  const dur = m.durationMs / 1000, title = cleanTitle(m.title), first = m.firstArtist || m.artist;
+  const q = async (path, params) => { try { const r = await fetch(`${LRCLIB}/${path}?` + new URLSearchParams(params)); return r.ok ? r.json() : null; } catch { return null; } };
+  // collect candidates from three searches, then score them
+  const [exact, byArtist, byTitle] = await Promise.all([
+    q("get", { track_name: m.title, artist_name: first, album_name: m.album, duration: Math.round(dur) }),
+    q("search", { track_name: title, artist_name: first }),
+    q("search", { q: title }),
+  ]);
+  const seen = new Set(), cands = [];
+  for (const x of [exact, ...(byArtist || []), ...(byTitle || [])]) if (x?.id && !seen.has(x.id) && (x.syncedLyrics || x.plainLyrics || x.instrumental)) { seen.add(x.id); cands.push(x); }
+  const norm = (x) => (x || "").toLowerCase().replace(/[^\p{L}\d]+/gu, "");
+  const artists = m.artist.split(/,|&/).map(norm).filter(a => a.length > 2);
+  // language hint from Spotify's own metadata: Cyrillic names → the original is most likely in Cyrillic
+  const cyrMeta = /[а-яё]/i.test([m.title, m.artist, m.album].join(" "));
+  const score = (x) => {
+    const d = Math.abs(x.duration - dur), text = x.syncedLyrics || x.plainLyrics || "", ca = norm(x.artistName);
+    const hits = Math.min(3, artists.filter(a => ca.includes(a) || (ca.length > 2 && a.includes(ca))).length);
+    if (d > (hits ? 8 : 3)) return -Infinity;                         // different recording
+    const cyrText = /[а-яё]/i.test(text);
+    return hits * 25                                                   // more of the track's artists named = more likely the original
+      + (cyrMeta ? (cyrText ? 40 : -20) : 0)
+      + (x.syncedLyrics ? 50 : 0)
+      + (norm(x.trackName) === norm(title) ? 10 : 0)
+      - (/remix|gachi|cover|karaoke|phonk|instrumental/i.test(x.trackName) && !/remix|cover/i.test(m.title) ? 40 : 0)
+      - d * 4;
   };
-  let rec = await get(m.title);
-  if (!rec?.syncedLyrics && cleanTitle(m.title) !== m.title) rec = (await get(cleanTitle(m.title))) || rec;
-  if (!rec?.syncedLyrics) {
-    const r = await fetch(`${LRCLIB}/search?` + new URLSearchParams({ track_name: cleanTitle(m.title), artist_name: m.firstArtist || m.artist }));
-    const list = r.ok ? await r.json() : [];
-    const best = list.filter(x => x.syncedLyrics).sort((a, b) => Math.abs(a.duration * 1000 - m.durationMs) - Math.abs(b.duration * 1000 - m.durationMs))[0];
-    rec = best || rec || list[0] || null;
-  }
-  if (!rec?.syncedLyrics) {           // artist spelled differently (e.g. Cyrillic or real name): title only, length must match ±2 s
-    const r = await fetch(`${LRCLIB}/search?` + new URLSearchParams({ q: cleanTitle(m.title) }));
-    const norm = (x) => x.toLowerCase().replace(/[^\p{L}\d]+/gu, "");
-    const odd = (x) => /remix|gachi|cover|karaoke|instrumental/i.test(x) && !/remix|cover/i.test(m.title);
-    const cands = (r.ok ? await r.json() : []).filter(x => (x.syncedLyrics || x.plainLyrics) && Math.abs(x.duration * 1000 - m.durationMs) <= 2000);
-    cands.sort((a, b) => (!a.syncedLyrics - !b.syncedLyrics) || (odd(a.trackName) - odd(b.trackName))
-      || ((norm(a.trackName) !== norm(cleanTitle(m.title))) - (norm(b.trackName) !== norm(cleanTitle(m.title))))
-      || Math.abs(a.duration * 1000 - m.durationMs) - Math.abs(b.duration * 1000 - m.durationMs));
-    if (cands[0] && (cands[0].syncedLyrics || !rec)) rec = cands[0];
-  }
-  if (!rec) return null;
-  const out = recToLyrics(rec); store.set(ck, out); return out;
+  const best = cands.map(x => [score(x), x]).filter(([sc]) => sc > -Infinity).sort((a, b) => b[0] - a[0])[0]?.[1];
+  if (!best) return null;
+  const out = recToLyrics(best); store.set(ck, out); return out;
 }
 
 /* ---------- word-by-word translation via Claude ---------- */
@@ -525,7 +530,7 @@ function showTitleTr(lat, de) {
 function rememberSong(meta, g) {      // songs translated on this device show up in the library too
   if (!meta.ids?.[0]) return;
   const list = store.get("mysongs", {});
-  list[meta.ids[0]] = { title: meta.title, artist: meta.artist, titleLat: g?.titleLat || "", titleDe: g?.titleDe || "", at: Date.now() };
+  list[meta.ids[0]] = { title: meta.title, artist: meta.artist, cover: meta.image || "", titleLat: g?.titleLat || "", titleDe: g?.titleDe || "", at: Date.now() };
   store.set("mysongs", list);
 }
 
@@ -700,7 +705,8 @@ function libSongs() {
 }
 function songRow(x, n) {
   const tr = (x.titleLat || x.titleDe) ? `<div class="st2"><span class="tl">${esc(x.titleLat)}</span>${x.titleLat && x.titleDe ? " · " : ""}${esc(x.titleDe)}</div>` : "";
-  return `<div class="song" data-id="${esc(x.id)}" data-lib="${x.inLib ? 1 : 0}"><div class="n">${n}</div><div class="b"><div class="st1">${esc(x.title)}</div>${tr}<div class="st3">${esc(x.artist)}</div></div></div>`;
+  const cv = x.cover ? `<img class="cv" src="${esc(x.cover)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'cv'}))">` : `<div class="cv"></div>`;
+  return `<div class="song" data-id="${esc(x.id)}" data-lib="${x.inLib ? 1 : 0}">${cv}<div class="b"><div class="st1">${esc(x.title)}</div>${tr}<div class="st3">${esc(x.artist)}</div></div></div>`;
 }
 function renderLib() {
   const q = $("#libSearch").value.trim().toLowerCase(), { lib, mine } = libSongs();
@@ -762,7 +768,7 @@ $("#q").addEventListener("keydown", async (e) => {
       : '<div class="item"><span>Nichts gefunden</span></div>';
     $("#results").querySelectorAll("[data-k]").forEach(el => el.onclick = () => {
       const x = list[+el.dataset.k], key = "lrclib:" + x.id;
-      store.set("lyr:" + key, recToLyrics(x));
+      store.set("lyr2:" + key, recToLyrics(x));
       clearInterval(pollTimer); clock.source = "local"; document.body.classList.add("local", "playing-ui");
       clock.durationMs = x.duration * 1000; clock.set(0, false);
       loadTrack({ key, title: x.trackName, artist: x.artistName, firstArtist: x.artistName, album: x.albumName || "", durationMs: x.duration * 1000, image: "" });

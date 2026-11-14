@@ -660,7 +660,7 @@ function pickLoop(k) {
   if (current.items[k]?.pause) return;
   if (loop.state === "pickIn") { loop.a = k; loop.state = "pickOut"; setStatus("Jetzt die letzte Zeile antippen (dieselbe = nur diese Zeile)", true); paintLoop(); return; }
   loop.b = Math.max(k, loop.a); loop.a = Math.min(k, loop.a);
-  loop.inT = current.items[loop.a].t - 300; loop.outT = lineEnd(loop.b); loop.count = 0; loop.state = "on";
+  loop.inT = current.items[loop.a].t - 300; loop.outT = lineEnd(loop.b) + 1500;   // let it run out a little: rather too long than cut off loop.count = 0; loop.state = "on";
   const n = loop.b - loop.a + 1;
   setStatus(`Schleife: ${n === 1 ? "1 Zeile" : n + " Zeilen"} · Loop-Button beendet sie`); paintLoop(); seekTo(loop.inT);
   if (!clock.playing) togglePlay();

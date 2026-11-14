@@ -101,7 +101,13 @@
   .bar { position: relative; height: 18px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
   .bar .track { position: absolute; left: 0; right: 0; height: 4px; border-radius: 4px; background: rgba(255,255,255,.22); overflow: hidden; }
   .bar .fill { height: 100%; width: 0; background: #fff; border-radius: 4px; }
-  .times { display: flex; justify-content: space-between; font-size: 11px; color: var(--soft); font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .loopbtn { border: 0; background: none; color: var(--soft); display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 12px; cursor: pointer; }
+  .loopbtn.arm { color: #fff; background: rgba(255,255,255,.14); }
+  .loopbtn.on { color: #0c0c0e; background: var(--de); }
+  .line, .pause { position: relative; }
+  .line.inloop::before, .pause.inloop::before, .line.loopmark::before { content: ""; position: absolute; left: -13px; top: .12em; bottom: .3em; width: 3px; border-radius: 3px; background: var(--de); }
+  .line.loopmark::before { background: rgba(255,255,255,.75); }
+  .times { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--soft); font-variant-numeric: tabular-nums; margin-top: 2px; }
   .btns { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
   .btns .nudge { font-size: 13px; font-weight: 600; color: var(--soft); width: 52px; height: 36px; border-radius: 18px; background: rgba(255,255,255,.1); }
   .btns .nudge small { display: block; font-size: 10px; font-weight: 500; opacity: .75; margin-top: -1px; }
@@ -152,7 +158,9 @@
 <main id="lyrics"><div class="empty">Öffne oben rechts die Einstellungen<br>und verbinde Spotify.</div></main>
 <div class="ctrl"><div class="inner">
   <div class="bar" id="bar"><div class="track"><div class="fill" id="fill"></div></div></div>
-  <div class="times"><span id="tNow">0:00</span><span id="tDur">0:00</span></div>
+  <div class="times"><span id="tNow">0:00</span>
+    <button class="loopbtn" id="btnLoop" aria-label="Schleife"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12"/><path d="M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></svg><span id="loopLbl">Loop</span></button>
+    <span id="tDur">0:00</span></div>
   <div class="btns">
     <button class="nudge" id="nudgeMinus" aria-label="Text eine Viertelsekunde später">−¼ s</button>
     <button id="btnPrev" aria-label="Vorheriger Song"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
@@ -558,7 +566,7 @@ const current = { key: null, meta: null, lyrics: null, gloss: null, items: [], i
 function showEmpty(msg) { $("#lyrics").innerHTML = `<div class="empty">${esc(msg)}</div>`; current.items = []; if (!current.lyrics) $("#syncBadge").innerHTML = ""; }
 async function loadTrack(meta) {
   const id = ++current.loadId;
-  commitPending();
+  commitPending(); stopLoop(true);
   Object.assign(current, { key: meta.key, meta, lyrics: null, gloss: null, idx: -2 }); loadKeyframes(meta.key);
   $("#hTitle").textContent = meta.title; $("#hArtist").textContent = meta.artist; showTitleTr("", "");
   setBackground(meta.image); showEmpty("Suche Liedtext …"); setStatus("");
@@ -622,14 +630,14 @@ function render() {
     let markedPause = false; for (let j = i + 1; j < L.length && !isText(L[j].text); j++) if (isPause(j)) markedPause = true;
     if (synced && next - l.t > 12000 && !markedPause) { const t = l.t + Math.max(4000, syllablesOf(words) * 450 + 1500); items.push({ t, pause: true }); html += `<div class="pause" data-k="${items.length - 1}">• • •</div>`; }
   });
-  current.items = items; current.idx = -2; updateBadge();
+  current.items = items; current.idx = -2; updateBadge(); paintLoop();
   const main = $("#lyrics"); main.innerHTML = html; main.classList.toggle("unsynced", !synced);
   main.querySelectorAll("[data-k]").forEach(el => {
     let timer = null, long = false;
     el.addEventListener("pointerdown", () => { long = false; timer = setTimeout(() => { long = true; syncTo(items[+el.dataset.k].t); }, 550); });
     ["pointerup", "pointerleave", "pointercancel"].forEach(ev => el.addEventListener(ev, () => clearTimeout(timer)));
     el.addEventListener("contextmenu", (e) => e.preventDefault());
-    el.onclick = () => { if (!long && synced) seekTo(items[+el.dataset.k].t + 1); };
+    el.onclick = () => { if (long) return; if (loop.state === "pickIn" || loop.state === "pickOut") return pickLoop(+el.dataset.k); if (synced) seekTo(items[+el.dataset.k].t + 1); };
   });
   if (current.lyrics.estimated) setStatus("Timing geschätzt – gesungene Zeile lange drücken, die App merkt es sich", true);
 }
@@ -641,6 +649,44 @@ let userScrollUntil = 0;
 ["wheel", "touchmove"].forEach(ev => addEventListener(ev, () => userScrollUntil = performance.now() + 4000, { passive: true }));
 function findItem(t) { const it = current.items; let lo = 0, hi = it.length - 1, a = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (it[m].t <= t) { a = m; lo = m + 1; } else hi = m - 1; } return a; }
 let lastPlayIcon = null;
+/* ---------- repeat loop (A–B): In = start of the first chosen line, Out = end of the last one ---------- */
+const loop = { state: "off", a: -1, b: -1, inT: 0, outT: 0, count: 0, cool: 0 };
+function lineEnd(k) {                 // when line k is over: next item start, but not through a long instrumental gap
+  const it = current.items, nx = it[k + 1]?.t ?? clock.durationMs;
+  const est = it[k].t + (it[k].words ? syllablesOf(it[k].words) * 450 : 0) + 1500;
+  return nx - it[k].t > 8000 ? Math.min(nx, Math.max(est, it[k].t + 3000)) : nx;
+}
+function pickLoop(k) {
+  if (current.items[k]?.pause) return;
+  if (loop.state === "pickIn") { loop.a = k; loop.state = "pickOut"; setStatus("Jetzt die letzte Zeile antippen (dieselbe = nur diese Zeile)", true); paintLoop(); return; }
+  loop.b = Math.max(k, loop.a); loop.a = Math.min(k, loop.a);
+  loop.inT = current.items[loop.a].t - 300; loop.outT = lineEnd(loop.b); loop.count = 0; loop.state = "on";
+  const n = loop.b - loop.a + 1;
+  setStatus(`Schleife: ${n === 1 ? "1 Zeile" : n + " Zeilen"} · Loop-Button beendet sie`); paintLoop(); seekTo(loop.inT);
+  if (!clock.playing) togglePlay();
+}
+function stopLoop(silent) { if (loop.state === "off") return; loop.state = "off"; paintLoop(); if (!silent) setStatus("Schleife beendet"); }
+function paintLoop() {
+  const btn = $("#btnLoop"); btn.classList.toggle("arm", loop.state === "pickIn" || loop.state === "pickOut"); btn.classList.toggle("on", loop.state === "on");
+  $("#loopLbl").textContent = loop.state === "on" ? (loop.count ? `${loop.count + 1}×` : "Loop an") : loop.state === "off" ? "Loop" : "Zeilen wählen";
+  const els = $("#lyrics").children;
+  for (let j = 0; j < els.length; j++) {
+    els[j].classList.toggle("inloop", loop.state === "on" && j >= loop.a && j <= loop.b);
+    els[j].classList.toggle("loopmark", loop.state === "pickOut" && j === loop.a);
+  }
+}
+$("#btnLoop").onclick = () => {
+  if (loop.state !== "off") return stopLoop();
+  if (!current.lyrics?.synced) return setStatus("Schleife braucht Zeilen mit Timing");
+  loop.state = "pickIn"; paintLoop(); setStatus("Schleife: erste Zeile antippen", true);
+};
+function checkLoop(t) {                // called every frame with the lyric time
+  if (loop.state !== "on" || performance.now() < loop.cool) return;
+  if (t >= loop.outT || t < loop.inT - 4000) {
+    loop.cool = performance.now() + 1200; loop.count++; seekTo(loop.inT); paintLoop();
+  }
+}
+
 function tick() {
   if (clock.durationMs) {
     const r = Math.min(clock.durationMs, Math.max(0, rawPos()));
@@ -650,6 +696,7 @@ function tick() {
   if (lastPlayIcon !== clock.playing) { lastPlayIcon = clock.playing; $("#btnPlay").innerHTML = clock.playing ? PAUSE : PLAY; }
   if (current.lyrics?.synced && current.items.length) {
     const t = clock.now(), k = findItem(t), els = $("#lyrics").children;
+    if (clock.playing) checkLoop(t);
     if (k !== current.idx) {
       current.idx = k;
       for (let j = 0; j < els.length; j++) { els[j].classList.toggle("active", j === k); els[j].classList.toggle("past", j < k); }

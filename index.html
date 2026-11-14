@@ -40,6 +40,9 @@
     border-radius: 50%; border: 0; background: rgba(255,255,255,.1); display: grid; place-items: center; cursor: pointer; }
   .icon-btn:active { transform: scale(.94); }
   .icon-btn.left { right: auto; left: 14px; }
+  .sync { display: inline-flex; vertical-align: -2px; margin-left: 6px; color: var(--soft); cursor: pointer; }
+  .sync svg { display: block; }
+  header .a { pointer-events: auto; }
   header .tt { font-size: 13px; color: var(--de); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   header .tt .tl { color: var(--soft); }
   body.no-lat header .tl, body.no-de header .td, body.no-lat header .dot, body.no-de header .dot { display: none; }
@@ -132,7 +135,7 @@
 </style>
 </head>
 <body>
-<header><div class="t" id="hTitle">Подстрочник</div><div class="tt" id="hTitleTr"></div><div class="a" id="hArtist">Russisch mitlesen</div></header>
+<header><div class="t" id="hTitle">Подстрочник</div><div class="tt" id="hTitleTr"></div><div class="a"><span id="hArtist">Russisch mitlesen</span><span class="sync" id="syncBadge"></span></div></header>
 <button class="icon-btn left" id="btnLib" aria-label="Bibliothek">
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4v16M9 4v16M14 5l5 15"/></svg>
 </button>
@@ -290,7 +293,7 @@ function commitPending() {
 function setKeyframe(r, off) {
   r = Math.max(0, Math.round(r)); off = Math.round(off);
   kfs = kfs.filter(([x]) => Math.abs(x - r) > 8000);          // a nearby keyframe is replaced
-  kfs.push([r, off]); kfs.sort((x, y) => x[0] - y[0]); saveKeyframes(); current.idx = -2;
+  kfs.push([r, off]); kfs.sort((x, y) => x[0] - y[0]); saveKeyframes(); current.idx = -2; updateBadge();
 }
 const fmtOff = (o) => (o >= 0 ? "+" : "") + (o / 1000).toFixed(2).replace(".", ",") + " s";
 
@@ -530,13 +533,29 @@ function showTitleTr(lat, de) {
 function rememberSong(meta, g) {      // songs translated on this device show up in the library too
   if (!meta.ids?.[0]) return;
   const list = store.get("mysongs", {});
-  list[meta.ids[0]] = { title: meta.title, artist: meta.artist, cover: meta.image || "", titleLat: g?.titleLat || "", titleDe: g?.titleDe || "", at: Date.now() };
+  list[meta.ids[0]] = { title: meta.title, artist: meta.artist, cover: meta.image || "", sync: current.lyrics?.estimated ? "est" : "sync", titleLat: g?.titleLat || "", titleDe: g?.titleDe || "", at: Date.now() };
   store.set("mysongs", list);
 }
 
+/* sync state icon: solid clock = timing from the database, dashed = estimated, dot = your own sync points */
+function syncIcon(state, adj) {
+  if (!state) return "";
+  const ring = state === "est" ? '<circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.2 2"/>'
+                               : '<circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.4"/>';
+  const dot = adj ? '<circle cx="13.3" cy="3" r="2.6" fill="#7db4ff" stroke="var(--bg)" stroke-width="1"/>' : "";
+  return `<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">${ring}<path d="M8 4.6V8l2.3 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>${dot}</svg>`;
+}
+const SYNC_TEXT = { sync: "Synchron: Zeitstempel aus der Lyrics-Datenbank", est: "Timing geschätzt – gesungene Zeile lange drücken zum Anpassen" };
+function updateBadge() {
+  const st = !current.lyrics ? "" : current.lyrics.estimated ? "est" : current.lyrics.synced ? "sync" : "";
+  const el = $("#syncBadge"); el.innerHTML = syncIcon(st, kfs.length > 0); el.dataset.st = st;
+  el.title = st ? SYNC_TEXT[st] + (kfs.length ? ` · ${kfs.length} eigene Synchron-Punkte` : "") : "";
+}
+$("#syncBadge").onclick = () => { const el = $("#syncBadge"); if (el.title) setStatus(el.title); };
+
 /* ---------- track loading ---------- */
 const current = { key: null, meta: null, lyrics: null, gloss: null, items: [], idx: -2, loadId: 0 };
-function showEmpty(msg) { $("#lyrics").innerHTML = `<div class="empty">${esc(msg)}</div>`; current.items = []; }
+function showEmpty(msg) { $("#lyrics").innerHTML = `<div class="empty">${esc(msg)}</div>`; current.items = []; if (!current.lyrics) $("#syncBadge").innerHTML = ""; }
 async function loadTrack(meta) {
   const id = ++current.loadId;
   commitPending();
@@ -597,7 +616,7 @@ function render() {
     // long instrumental gap after this line → show a pause marker
     if (synced && next - l.t > 12000 && L[i + 1]?.text !== "") { const t = l.t + Math.max(4000, syllablesOf(words) * 450 + 1500); items.push({ t, pause: true }); html += `<div class="pause" data-k="${items.length - 1}">• • •</div>`; }
   });
-  current.items = items; current.idx = -2;
+  current.items = items; current.idx = -2; updateBadge();
   const main = $("#lyrics"); main.innerHTML = html; main.classList.toggle("unsynced", !synced);
   main.querySelectorAll("[data-k]").forEach(el => {
     let timer = null, long = false;
@@ -706,7 +725,7 @@ function libSongs() {
 function songRow(x, n) {
   const tr = (x.titleLat || x.titleDe) ? `<div class="st2"><span class="tl">${esc(x.titleLat)}</span>${x.titleLat && x.titleDe ? " · " : ""}${esc(x.titleDe)}</div>` : "";
   const cv = x.cover ? `<img class="cv" src="${esc(x.cover)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'cv'}))">` : `<div class="cv"></div>`;
-  return `<div class="song" data-id="${esc(x.id)}" data-lib="${x.inLib ? 1 : 0}">${cv}<div class="b"><div class="st1">${esc(x.title)}</div>${tr}<div class="st3">${esc(x.artist)}</div></div></div>`;
+  return `<div class="song" data-id="${esc(x.id)}" data-lib="${x.inLib ? 1 : 0}">${cv}<div class="b"><div class="st1">${esc(x.title)}</div>${tr}<div class="st3">${esc(x.artist)}<span class="sync">${syncIcon(x.sync || (x.synced === false ? "est" : "sync"), !!store.get("kf:sp:" + x.id, null)?.length)}</span></div></div></div>`;
 }
 function renderLib() {
   const q = $("#libSearch").value.trim().toLowerCase(), { lib, mine } = libSongs();
@@ -745,7 +764,7 @@ function applyToggles() { $("#optCover").checked = cfg.cover; document.body.clas
 $("#optLat").onchange = (e) => { cfg.lat = e.target.checked; saveCfg(); applyToggles(); };
 $("#optDe").onchange = (e) => { cfg.de = e.target.checked; saveCfg(); applyToggles(); };
 const showOff = () => $("#kfInfo").textContent = kfs.length ? kfs.map(([r, o]) => `${fmt(r)} ${fmtOff(o)}`).join(" · ") : "keine – Original-Timing";
-$("#kfReset").onclick = () => { clearTimeout(pendingTimer); pending = null; kfs = []; saveKeyframes(); store.del("off:" + current.key); current.idx = -2; showOff(); setStatus("Timing zurückgesetzt"); };
+$("#kfReset").onclick = () => { clearTimeout(pendingTimer); pending = null; kfs = []; setTimeout(updateBadge); saveKeyframes(); store.del("off:" + current.key); current.idx = -2; showOff(); setStatus("Timing zurückgesetzt"); };
 $("#sKey").onchange = () => { cfg.apiKey = $("#sKey").value.trim(); saveCfg(); if (current.meta && current.lyrics && !current.gloss) loadTrack(current.meta); };
 $("#sCode").onchange = async () => { cfg.code = $("#sCode").value.trim(); saveCfg(); if (await unlockLibrary(cfg.code) && current.meta) loadTrack(current.meta); };
 $("#sModel").onchange = () => { cfg.model = $("#sModel").value; saveCfg(); };

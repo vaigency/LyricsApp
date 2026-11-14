@@ -66,9 +66,19 @@
   .empty { font-size: 20px; font-weight: 500; color: var(--soft); text-align: center; line-height: 1.5; }
   .unsynced .line { opacity: 1; cursor: default; }
 
-  .play { position: fixed; z-index: 6; bottom: calc(20px + var(--safe-b)); left: 50%; transform: translateX(-50%);
-    width: 58px; height: 58px; border-radius: 50%; border: 0; background: #fff; color: #000; display: none; place-items: center; cursor: pointer; }
-  body.local .play { display: grid; }
+  .ctrl { position: fixed; z-index: 6; left: 0; right: 0; bottom: 0; padding: 26px 22px calc(14px + var(--safe-b));
+    background: linear-gradient(transparent, var(--bg) 38%); display: none; transition: background .8s ease; }
+  body.playing-ui .ctrl { display: block; }
+  .ctrl .inner { max-width: 520px; margin: 0 auto; }
+  .bar { position: relative; height: 18px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
+  .bar .track { position: absolute; left: 0; right: 0; height: 4px; border-radius: 4px; background: rgba(255,255,255,.22); overflow: hidden; }
+  .bar .fill { height: 100%; width: 0; background: #fff; border-radius: 4px; }
+  .times { display: flex; justify-content: space-between; font-size: 11px; color: var(--soft); font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .btns { display: flex; align-items: center; justify-content: center; gap: 34px; margin-top: 4px; }
+  .btns button { border: 0; background: none; color: #fff; padding: 6px; cursor: pointer; display: grid; place-items: center; }
+  .btns .pp { width: 56px; height: 56px; border-radius: 50%; background: #fff; color: #000; }
+  .btns button:active { transform: scale(.92); }
+  main { padding-bottom: 60vh; }
 
   /* ---------- settings sheet ---------- */
   dialog { border: 0; padding: 0; margin: auto auto 0; width: min(560px, 100vw); max-height: 88dvh;
@@ -101,7 +111,15 @@
 </button>
 <div class="status" id="status"></div>
 <main id="lyrics"><div class="empty">Öffne oben rechts die Einstellungen<br>und verbinde Spotify.</div></main>
-<button class="play" id="btnPlay" aria-label="Play/Pause"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"/></svg></button>
+<div class="ctrl"><div class="inner">
+  <div class="bar" id="bar"><div class="track"><div class="fill" id="fill"></div></div></div>
+  <div class="times"><span id="tNow">0:00</span><span id="tDur">0:00</span></div>
+  <div class="btns">
+    <button id="btnPrev" aria-label="Vorheriger Song"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+    <button class="pp" id="btnPlay" aria-label="Play/Pause"></button>
+    <button id="btnNext" aria-label="Nächster Song"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+  </div>
+</div></div>
 
 <dialog id="settings">
   <div class="sheet">
@@ -125,7 +143,7 @@
     </div>
     <h3>Timing</h3>
     <div class="group">
-      <div class="item"><span>Versatz<small>falls der Text zu früh oder zu spät kommt</small></span>
+      <div class="item"><span>Versatz für diesen Song<small>Tipp: Zeile lange drücken, wenn sie gerade gesungen wird</small></span>
         <button class="pill" id="offMinus">−</button><span id="offVal" style="flex:none;width:58px;text-align:center">0,00 s</span><button class="pill" id="offPlus">+</button></div>
     </div>
     <h3>Ohne Spotify</h3>
@@ -185,9 +203,13 @@ function stressHtml(w) {
 /* ---------- playback clock ---------- */
 const clock = {
   source: "none", baseMs: 0, basePerf: 0, playing: false, durationMs: 0,
-  now() { return (this.playing ? this.baseMs + performance.now() - this.basePerf : this.baseMs) + cfg.offsetMs; },
+  now() { return (this.playing ? this.baseMs + performance.now() - this.basePerf : this.baseMs) + cfg.offsetMs + songOff; },
   set(ms, playing) { this.baseMs = ms; this.basePerf = performance.now(); this.playing = playing; },
 };
+
+let songOff = 0;   // per-song timing correction, saved under "off:<track>"
+const loadSongOff = (key) => { songOff = store.get("off:" + key, 0); };
+const saveSongOff = (v) => { songOff = Math.round(v); if (current.key) store.set("off:" + current.key, songOff); };
 
 /* ---------- Spotify (PKCE) ---------- */
 const REDIRECT = location.origin + location.pathname;
@@ -231,18 +253,22 @@ const metaOf = (it) => ({ key: "sp:" + it.id, ids: [it.id, it.linked_from?.id].f
   firstArtist: it.artists[0]?.name || "", album: it.album?.name || "", durationMs: it.duration_ms,
   image: it.album?.images?.at(-1)?.url || it.album?.images?.[0]?.url || "" });
 
-let pollTimer = null, lastQueueCheck = "";
+let pollTimer = null, lastQueueCheck = "", ignorePollUntil = 0;
 async function pollSpotify() {
   if (document.hidden) return;
   try {
+    const t0 = performance.now();
     const cp = await sp("/me/player/currently-playing");
+    const rtt = performance.now() - t0;
     if (!cp || !cp.item || cp.currently_playing_type !== "track") {
       if (clock.source === "spotify") clock.playing = false;
       if (!current.key) showEmpty("Starte einen Song in Spotify.");
       return;
     }
     clock.source = "spotify"; document.body.classList.remove("local");
-    clock.durationMs = cp.item.duration_ms; clock.set(cp.progress_ms, cp.is_playing);
+    document.body.classList.add("playing-ui");
+    clock.durationMs = cp.item.duration_ms;
+    if (performance.now() > ignorePollUntil) clock.set(cp.progress_ms + (cp.is_playing ? Math.min(rtt / 2, 400) : 0), cp.is_playing);
     const meta = metaOf(cp.item);
     if (meta.key !== current.key) { loadTrack(meta); prefetchNext(meta.key); }
   } catch (e) { setStatus(e.message); }
@@ -402,7 +428,7 @@ const current = { key: null, meta: null, lyrics: null, gloss: null, items: [], i
 function showEmpty(msg) { $("#lyrics").innerHTML = `<div class="empty">${esc(msg)}</div>`; current.items = []; }
 async function loadTrack(meta) {
   const id = ++current.loadId;
-  Object.assign(current, { key: meta.key, meta, lyrics: null, gloss: null, idx: -2 });
+  Object.assign(current, { key: meta.key, meta, lyrics: null, gloss: null, idx: -2 }); loadSongOff(meta.key);
   $("#hTitle").textContent = meta.title; $("#hArtist").textContent = meta.artist;
   setBackground(meta.image); showEmpty("Suche Liedtext …"); setStatus("");
   window.scrollTo({ top: 0 });
@@ -451,7 +477,13 @@ function render() {
   });
   current.items = items; current.idx = -2;
   const main = $("#lyrics"); main.innerHTML = html; main.classList.toggle("unsynced", !synced);
-  main.querySelectorAll("[data-k]").forEach(el => el.onclick = () => synced && seekTo(items[+el.dataset.k].t + 1));
+  main.querySelectorAll("[data-k]").forEach(el => {
+    let timer = null, long = false;
+    el.addEventListener("pointerdown", () => { long = false; timer = setTimeout(() => { long = true; syncTo(items[+el.dataset.k].t); }, 550); });
+    ["pointerup", "pointerleave", "pointercancel"].forEach(ev => el.addEventListener(ev, () => clearTimeout(timer)));
+    el.addEventListener("contextmenu", (e) => e.preventDefault());
+    el.onclick = () => { if (!long && synced) seekTo(items[+el.dataset.k].t + 1); };
+  });
   if (!synced) setStatus("Für diesen Song gibt es nur Text ohne Timing", true);
 }
 const syllablesOf = (words) => words.reduce((a, w) => a + syllables(w.ru), 0);
@@ -460,7 +492,14 @@ const syllablesOf = (words) => words.reduce((a, w) => a + syllables(w.ru), 0);
 let userScrollUntil = 0;
 ["wheel", "touchmove"].forEach(ev => addEventListener(ev, () => userScrollUntil = performance.now() + 4000, { passive: true }));
 function findItem(t) { const it = current.items; let lo = 0, hi = it.length - 1, a = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (it[m].t <= t) { a = m; lo = m + 1; } else hi = m - 1; } return a; }
+let lastPlayIcon = null;
 function tick() {
+  if (clock.durationMs) {
+    const r = Math.min(clock.durationMs, Math.max(0, rawPos()));
+    if (!window.barDragging?.()) $("#fill").style.width = (100 * r / clock.durationMs) + "%";
+    $("#tNow").textContent = fmt(r); $("#tDur").textContent = fmt(clock.durationMs);
+  }
+  if (lastPlayIcon !== clock.playing) { lastPlayIcon = clock.playing; $("#btnPlay").innerHTML = clock.playing ? PAUSE : PLAY; }
   if (current.lyrics?.synced && current.items.length) {
     const t = clock.now(), k = findItem(t), els = $("#lyrics").children;
     if (k !== current.idx) {
@@ -481,18 +520,45 @@ function tick() {
 }
 
 /* ---------- controls ---------- */
-async function seekTo(ms) {
-  ms = Math.max(0, Math.round(ms - cfg.offsetMs)); clock.set(ms, clock.playing); userScrollUntil = 0;
-  if (clock.source === "spotify") try { await sp(`/me/player/seek?position_ms=${ms}`, { method: "PUT" }); } catch (e) { setStatus(e.message); }
+const PLAY = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+const PAUSE = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>';
+const rawPos = () => clock.now() - cfg.offsetMs - songOff;          // position in the recording itself
+const spCmd = (path, method = "PUT") => sp(path, { method }).catch(e => setStatus(e.message.includes("Premium") ? "Steuerung braucht Spotify Premium" : e.message));
+async function seekTo(ms) {           // ms = lyric time
+  ms = Math.max(0, Math.round(ms - cfg.offsetMs - songOff)); clock.set(ms, clock.playing); userScrollUntil = 0; ignorePollUntil = performance.now() + 1500;
+  if (clock.source === "spotify") await spCmd(`/me/player/seek?position_ms=${ms}`);
+}
+function syncTo(lineT) {              // the user says: this line is being sung right now
+  saveSongOff(lineT + 120 - (clock.now() - songOff)); current.idx = -2;
+  setStatus(`Timing angepasst (${songOff >= 0 ? "+" : ""}${(songOff / 1000).toFixed(1).replace(".", ",")} s) – gilt für diesen Song`);
+  navigator.vibrate?.(30);
 }
 function togglePlay() {
-  const was = clock.playing; clock.set(clock.now() - cfg.offsetMs, !was);
-  $("#btnPlay").innerHTML = was ? '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"/></svg>'
-    : '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
-  if (clock.source === "spotify") sp(`/me/player/${was ? "pause" : "play"}`, { method: "PUT" }).catch(e => setStatus(e.message));
+  const was = clock.playing; clock.set(rawPos(), !was); ignorePollUntil = performance.now() + 1500;
+  if (clock.source === "spotify") spCmd(`/me/player/${was ? "pause" : "play"}`);
+}
+async function skip(dir) {
+  if (clock.source === "local") { seekTo(dir > 0 ? clock.durationMs : 0); return; }
+  if (dir < 0 && rawPos() > 3000) { seekTo(cfg.offsetMs + songOff); return; }      // like Spotify: back = restart song first
+  await spCmd(`/me/player/${dir > 0 ? "next" : "previous"}`, "POST");
+  setTimeout(pollSpotify, 350); setTimeout(pollSpotify, 1000);
 }
 $("#btnPlay").onclick = togglePlay;
-document.addEventListener("keydown", (e) => { if (!e.target.matches("input, select") && e.code === "Space") { e.preventDefault(); togglePlay(); } });
+$("#btnNext").onclick = () => skip(1);
+$("#btnPrev").onclick = () => skip(-1);
+/* progress bar: tap or drag to seek */
+(() => {
+  const bar = $("#bar"); let drag = false;
+  const pos = (e) => Math.min(1, Math.max(0, (e.clientX - bar.getBoundingClientRect().left) / bar.offsetWidth));
+  bar.addEventListener("pointerdown", (e) => { drag = true; bar.setPointerCapture(e.pointerId); $("#fill").style.width = pos(e) * 100 + "%"; });
+  bar.addEventListener("pointermove", (e) => { if (drag) $("#fill").style.width = pos(e) * 100 + "%"; });
+  bar.addEventListener("pointerup", (e) => { if (!drag) return; drag = false; seekTo(pos(e) * clock.durationMs + cfg.offsetMs + songOff); });
+  window.barDragging = () => drag;
+})();
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches("input, select")) return;
+  if (e.code === "Space") { e.preventDefault(); togglePlay(); } else if (e.key === "ArrowRight") skip(1); else if (e.key === "ArrowLeft") skip(-1);
+});
 let wakeLock = null;
 async function requestWakeLock() { try { if ("wakeLock" in navigator && !document.hidden && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => wakeLock = null); } } catch {} }
 
@@ -501,9 +567,9 @@ $("#optCover").onchange = (e) => { cfg.cover = e.target.checked; saveCfg(); setB
 function applyToggles() { $("#optCover").checked = cfg.cover; document.body.classList.toggle("no-lat", !cfg.lat); document.body.classList.toggle("no-de", !cfg.de); $("#optLat").checked = cfg.lat; $("#optDe").checked = cfg.de; }
 $("#optLat").onchange = (e) => { cfg.lat = e.target.checked; saveCfg(); applyToggles(); };
 $("#optDe").onchange = (e) => { cfg.de = e.target.checked; saveCfg(); applyToggles(); };
-const showOff = () => $("#offVal").textContent = (cfg.offsetMs >= 0 ? "+" : "") + (cfg.offsetMs / 1000).toFixed(2).replace(".", ",") + " s";
-$("#offMinus").onclick = () => { cfg.offsetMs -= 250; saveCfg(); showOff(); };
-$("#offPlus").onclick = () => { cfg.offsetMs += 250; saveCfg(); showOff(); };
+const showOff = () => $("#offVal").textContent = (songOff >= 0 ? "+" : "") + (songOff / 1000).toFixed(2).replace(".", ",") + " s";
+$("#offMinus").onclick = () => { saveSongOff(songOff - 250); current.idx = -2; showOff(); };
+$("#offPlus").onclick = () => { saveSongOff(songOff + 250); current.idx = -2; showOff(); };
 $("#sKey").onchange = () => { cfg.apiKey = $("#sKey").value.trim(); saveCfg(); if (current.meta && current.lyrics && !current.gloss) loadTrack(current.meta); };
 $("#sCode").onchange = async () => { cfg.code = $("#sCode").value.trim(); saveCfg(); if (await unlockLibrary(cfg.code) && current.meta) loadTrack(current.meta); };
 $("#sModel").onchange = () => { cfg.model = $("#sModel").value; saveCfg(); };
@@ -527,7 +593,7 @@ $("#q").addEventListener("keydown", async (e) => {
     $("#results").querySelectorAll("[data-k]").forEach(el => el.onclick = () => {
       const x = list[+el.dataset.k], key = "lrclib:" + x.id;
       store.set("lyr:" + key, recToLyrics(x));
-      clearInterval(pollTimer); clock.source = "local"; document.body.classList.add("local");
+      clearInterval(pollTimer); clock.source = "local"; document.body.classList.add("local", "playing-ui");
       clock.durationMs = x.duration * 1000; clock.set(0, false);
       loadTrack({ key, title: x.trackName, artist: x.artistName, firstArtist: x.artistName, album: x.albumName || "", durationMs: x.duration * 1000, image: "" });
       $("#settings").close();

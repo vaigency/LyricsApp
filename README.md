@@ -21,3 +21,12 @@ Kyrillisch (betonte Silbe markiert), Aussprache in deutscher Schreibweise und de
 - Claude: übersetzt jeden Song einmal; das Ergebnis bleibt auf dem Gerät gespeichert.
   Der nächste Song in der Warteschlange wird schon vorab übersetzt.
 - Läuft komplett im Browser, kein Server. Schlüssel bleiben auf dem Gerät.
+
+## Playlist-Bibliothek (ohne API Key)
+
+`library.enc` enthält Liedtexte und Übersetzungen der Playlist, verschlüsselt (AES-GCM, Schlüssel per PBKDF2 aus dem
+Zugangscode). Freischalten: App einmal mit `#code=<Zugangscode>` am Ende der Adresse öffnen oder den Code unter ⚙︎ eintragen.
+
+Neu bauen (Werkzeuge in `tools/`): Trackliste → `fetch_lyrics.py` → `make_batches.py` → Übersetzungen je Song als
+`out/<spotify-id>.json` (geprüft mit `validate.py`) → `node tools/build_library.mjs <ordner> <code> library.enc`.
+Die Rohdaten (Liedtexte, Übersetzungen) gehören nicht ins Repository.

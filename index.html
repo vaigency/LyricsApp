@@ -3,168 +3,140 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f1115">
+<meta name="theme-color" content="#3b2350">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Подстрочник">
+<meta name="apple-mobile-web-app-title" content="Lyrics">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;800&display=swap" rel="stylesheet">
 <title>Подстрочник</title>
 <style>
   :root {
-    --bg: #0f1115; --panel: #171a21; --panel2: #1f232c; --line: #2a2f3a;
-    --text: #eceef3; --muted: #8a91a3; --accent: #1ed760; --stress: #ffcc4d;
-    --lat: #c3b5ff; --de: #8ab4ff; --danger: #ff6b6b;
-    --safe-b: env(safe-area-inset-bottom, 0px); --safe-t: env(safe-area-inset-top, 0px);
+    --bg: #3b2350;                 /* replaced by the album colour */
+    --ink: #ffffff;
+    --soft: rgba(255,255,255,.72);
+    --faint: rgba(255,255,255,.42);
+    --de: #ffe2a6;
+    --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px);
+    --ru: clamp(26px, 7.2vw, 46px);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; background: var(--bg); color: var(--text);
-    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  html, body { margin: 0; min-height: 100%; }
+  body { background: var(--bg); color: var(--ink); transition: background-color .8s ease;
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
   button, input, select { font: inherit; color: inherit; }
-  button { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; cursor: pointer; }
-  button.primary { background: var(--accent); color: #0b0b0b; border-color: var(--accent); font-weight: 600; }
-  button.on { border-color: var(--accent); color: var(--accent); }
-  input, select { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; }
 
-  header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: calc(10px + var(--safe-t)) 16px 8px;
-    display: flex; gap: 10px; align-items: center; border-bottom: 1px solid var(--line); }
-  header .song { flex: 1; min-width: 0; }
-  header .t { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  header .a { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .status { font-size: 13px; color: var(--muted); padding: 6px 16px 0; min-height: 22px; }
-  .status.err { color: var(--danger); }
+  /* ---------- header: title + artist, centred ---------- */
+  header { position: fixed; inset: 0 0 auto 0; z-index: 5; text-align: center;
+    padding: calc(14px + var(--safe-t)) 64px 26px;
+    background: linear-gradient(var(--bg) 74%, transparent); transition: background .8s ease; }
+  header .t { font-weight: 800; font-size: 17px; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  header .a { font-size: 14px; color: var(--soft); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .icon-btn { position: fixed; z-index: 6; top: calc(12px + var(--safe-t)); right: 14px; width: 40px; height: 40px;
+    border-radius: 50%; border: 0; background: rgba(255,255,255,.12); display: grid; place-items: center; cursor: pointer; }
+  .icon-btn:active { transform: scale(.94); }
+  .status { position: fixed; z-index: 5; left: 50%; transform: translateX(-50%); top: calc(74px + var(--safe-t));
+    font-size: 13px; color: var(--soft); background: rgba(0,0,0,.22); padding: 5px 12px; border-radius: 999px;
+    max-width: calc(100vw - 32px); text-align: center; transition: opacity .3s; }
+  .status:empty { opacity: 0; }
 
-  main { max-width: 860px; margin: 0 auto; padding: 8px 14px calc(96px + var(--safe-b)); display: flex; flex-direction: column; gap: 14px; }
-  .ctx { color: var(--muted); font-size: 16px; min-height: 22px; padding: 0 4px; }
-  .ctx .de { font-size: 13px; color: var(--de); opacity: .75; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 10px; }
-  .words { display: flex; flex-wrap: wrap; gap: 8px 4px; justify-content: center; }
-  .w { display: flex; flex-direction: column; align-items: center; padding: 6px 7px; border-radius: 10px;
-    border: 1px solid transparent; min-width: 36px; position: relative; transition: background .12s, border-color .12s; }
-  .w.active { background: rgba(30,215,96,.13); border-color: var(--accent); }
-  .w.saved::after { content: "★"; position: absolute; top: -6px; right: -2px; font-size: 11px; color: var(--stress); }
-  .w .ru { font-size: 27px; font-weight: 600; line-height: 1.15; }
-  .w .ru .st { color: var(--stress); }
-  .w .lat { font-size: 15px; color: var(--lat); margin-top: 2px; }
-  .w .de { font-size: 14px; color: var(--de); text-align: center; max-width: 140px; line-height: 1.2; margin-top: 2px; }
-  body.no-lat .w .lat, body.no-lat .lyr .lat { display: none; }
-  body.no-de .w .de, body.no-de .linede, body.no-de .ctx .de { display: none; }
-  .linede { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 17px; color: var(--de); text-align: center; }
-  .progress { height: 3px; background: var(--line); border-radius: 3px; margin-top: 12px; overflow: hidden; }
-  .progress > div { height: 100%; width: 0; background: var(--accent); }
-  .empty { color: var(--muted); padding: 34px 8px; text-align: center; }
-  details.summary { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 15px; color: #cfd3dc; }
-  details.summary summary { cursor: pointer; color: var(--text); font-weight: 600; }
+  /* ---------- lyrics ---------- */
+  main { max-width: 820px; margin: 0 auto; padding: calc(42vh) 22px 55vh; }
+  .line { margin: 0 0 1.25em; font-size: var(--ru); opacity: .5; transition: opacity .35s ease; cursor: pointer; }
+  .line.past { opacity: .32; }
+  .line.active { opacity: 1; }
+  .row { display: flex; flex-wrap: wrap; gap: .1em .38em; margin-bottom: .32em; }
+  .w { display: inline-flex; flex-direction: column; align-items: flex-start; }
+  .w .ru { font-weight: 800; letter-spacing: -.015em; line-height: 1.08; }
+  .w .st { text-decoration: underline; text-decoration-thickness: .07em; text-underline-offset: .14em; }
+  .w .lat { font-size: .44em; font-weight: 500; color: var(--soft); line-height: 1.25; margin-top: .12em; }
+  .w .de { font-size: .4em; font-weight: 400; color: var(--de); line-height: 1.25; }
+  .line.active .w { opacity: .62; transition: opacity .18s; }
+  .line.active .w.sung { opacity: 1; }
+  .line .tr { display: none; font-size: .44em; font-weight: 500; color: var(--de); margin-top: .35em; line-height: 1.3; }
+  .line.active .tr { display: block; }
+  body.no-lat .lat, body.no-de .de, body.no-de .tr { display: none !important; }
+  .pause { font-size: var(--ru); margin: 0 0 1.25em; letter-spacing: .3em; opacity: .4; font-weight: 800; }
+  .pause.active { opacity: 1; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  .empty { font-size: 20px; font-weight: 500; color: var(--soft); text-align: center; line-height: 1.5; }
+  .unsynced .line { opacity: 1; cursor: default; }
 
-  nav.bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: rgba(15,17,21,.96); backdrop-filter: blur(8px);
-    border-top: 1px solid var(--line); padding: 8px 10px calc(8px + var(--safe-b)); }
-  nav.bar .inner { max-width: 860px; margin: 0 auto; display: flex; gap: 6px; align-items: center; justify-content: space-between; }
-  nav.bar button { padding: 10px 0; flex: 1; min-width: 0; font-size: 15px; }
-  .time { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: center; padding-bottom: 6px; }
+  .play { position: fixed; z-index: 6; bottom: calc(20px + var(--safe-b)); left: 50%; transform: translateX(-50%);
+    width: 58px; height: 58px; border-radius: 50%; border: 0; background: #fff; color: #000; display: none; place-items: center; cursor: pointer; }
+  body.local .play { display: grid; }
 
-  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 16px;
-    width: min(640px, 100vw - 16px); max-height: calc(100dvh - 32px); padding: 0; }
-  dialog::backdrop { background: rgba(0,0,0,.6); }
-  .dlg-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1; }
-  .dlg-head h3 { margin: 0; flex: 1; font-size: 17px; }
-  .dlg-body { padding: 12px 14px 18px; overflow: auto; }
-  .tabs { display: flex; gap: 6px; padding: 0 14px 10px; background: var(--panel); position: sticky; top: 55px; z-index: 1; }
-  .tabs button { flex: 1; padding: 7px; font-size: 14px; }
-  .pane { display: none; } .pane.on { display: block; }
-  label.f { display: block; margin: 14px 0 5px; font-size: 13px; color: var(--muted); }
-  .hint { font-size: 13px; color: var(--muted); margin-top: 5px; }
-  .hint code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; word-break: break-all; }
-  .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
-  .lyr { padding: 8px; border-radius: 10px; cursor: pointer; }
-  .lyr.on { background: rgba(30,215,96,.1); }
-  .lyr .ru { font-size: 16px; } .lyr .lat { font-size: 13px; color: var(--lat); } .lyr .de { font-size: 13px; color: var(--de); }
-  .lyr .ts { font-size: 11px; color: var(--muted); }
-  .result { padding: 10px; border-radius: 10px; border: 1px solid var(--line); margin-bottom: 8px; cursor: pointer; }
-  .result small { color: var(--muted); }
-  .vocab { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: center; }
-  .vocab small { display: block; color: var(--lat); }
+  /* ---------- settings sheet ---------- */
+  dialog { border: 0; padding: 0; margin: auto auto 0; width: min(560px, 100vw); max-height: 88dvh;
+    border-radius: 22px 22px 0 0; background: #17171c; color: var(--ink); }
+  @media (min-width: 700px) { dialog { margin: auto; border-radius: 22px; } }
+  dialog::backdrop { background: rgba(0,0,0,.5); }
+  .sheet { padding: 10px 20px calc(24px + var(--safe-b)); }
+  .grip { width: 38px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.25); margin: 0 auto 14px; }
+  .sheet h3 { margin: 0 0 6px; font-size: 13px; font-weight: 500; color: rgba(255,255,255,.5); text-transform: uppercase; letter-spacing: .06em; }
+  .group { background: rgba(255,255,255,.06); border-radius: 14px; margin-bottom: 18px; }
+  .item { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-bottom: 1px solid rgba(255,255,255,.07); min-height: 50px; }
+  .item:last-child { border-bottom: 0; }
+  .item > span { flex: 1; }
+  .item small { display: block; color: rgba(255,255,255,.5); font-size: 12px; margin-top: 2px; }
+  .switch { appearance: none; width: 46px; height: 28px; border-radius: 28px; background: rgba(255,255,255,.2); position: relative; cursor: pointer; transition: background .2s; flex: none; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform .2s; }
+  .switch:checked { background: #1ed760; } .switch:checked::after { transform: translateX(18px); }
+  .item input[type=password], .item input[type=search], .item select { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; text-align: right; color: rgba(255,255,255,.85); }
+  .item select option { color: #000; }
+  .pill { border: 0; background: rgba(255,255,255,.12); border-radius: 999px; padding: 7px 14px; cursor: pointer; }
+  .pill.green { background: #1ed760; color: #000; font-weight: 600; }
+  .results .item { cursor: pointer; }
+  .tiny { font-size: 12px; color: rgba(255,255,255,.45); text-align: center; line-height: 1.5; }
 </style>
 </head>
 <body>
-<header>
-  <div class="song"><div class="t" id="hTitle">Подстрочник</div><div class="a" id="hArtist">Russisch mitlesen</div></div>
-  <button id="btnSheet" aria-label="Ganzer Text">☰</button>
-  <button id="btnSettings" aria-label="Einstellungen">⚙︎</button>
-</header>
+<header><div class="t" id="hTitle">Подстрочник</div><div class="a" id="hArtist">Russisch mitlesen</div></header>
+<button class="icon-btn" id="btnSettings" aria-label="Einstellungen">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+</button>
 <div class="status" id="status"></div>
-
-<main>
-  <div class="ctx" id="prevLine"></div>
-  <div class="card">
-    <div class="words" id="curWords"><div class="empty">Tippe auf ⚙︎, verbinde Spotify und starte einen Song.</div></div>
-    <div class="linede" id="curDe" hidden></div>
-    <div class="progress"><div id="lineProg"></div></div>
-  </div>
-  <div class="ctx" id="nextLine"></div>
-  <details class="summary" id="summary" hidden><summary>Worum geht's im Song?</summary><div id="summaryText" style="margin-top:6px"></div></details>
-</main>
-
-<nav class="bar">
-  <div class="time" id="time"></div>
-  <div class="inner">
-    <button id="btnPrev" aria-label="Vorige Zeile">⏮</button>
-    <button id="btnRepeat" aria-label="Zeile wiederholen">↺</button>
-    <button id="btnPlay" aria-label="Play/Pause">⏯</button>
-    <button id="btnNext" aria-label="Nächste Zeile">⏭</button>
-    <button id="tLat" title="Aussprache ein/aus">Abc</button>
-    <button id="tDe" title="Deutsch ein/aus">DE</button>
-  </div>
-</nav>
-
-<dialog id="sheet">
-  <div class="dlg-head"><h3>Text</h3><button data-close>✕</button></div>
-  <div class="tabs">
-    <button data-tab="lyrics" class="on">Liedtext</button>
-    <button data-tab="search">Suchen</button>
-    <button data-tab="vocab">Vokabeln</button>
-  </div>
-  <div class="dlg-body">
-    <div class="pane on" id="pane-lyrics"><div class="hint">Noch kein Text geladen.</div></div>
-    <div class="pane" id="pane-search">
-      <div class="hint">Ohne Spotify üben: Song suchen und mit dem eingebauten Timer abspielen.</div>
-      <div class="row"><input id="q" placeholder="z. B. Кино Кукушка" enterkeyhint="search"><button id="btnSearch">Suchen</button></div>
-      <div id="results"></div>
-    </div>
-    <div class="pane" id="pane-vocab">
-      <div class="hint">Tippe im Lied auf ein Wort, um es hier zu speichern (★).</div>
-      <div class="row"><button id="btnExport">Als CSV exportieren</button></div>
-      <div id="vocabList"></div>
-    </div>
-  </div>
-</dialog>
+<main id="lyrics"><div class="empty">Öffne oben rechts die Einstellungen<br>und verbinde Spotify.</div></main>
+<button class="play" id="btnPlay" aria-label="Play/Pause"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"/></svg></button>
 
 <dialog id="settings">
-  <div class="dlg-head"><h3>Einstellungen</h3><button data-close>✕</button></div>
-  <div class="dlg-body">
-    <button class="primary" id="btnSpotify" style="width:100%">Mit Spotify verbinden</button>
-    <label class="f">Claude API Key (einmalig pro Gerät)</label>
-    <input id="sKey" type="password" placeholder="sk-ant-…" autocomplete="off">
-    <div class="hint">Wird nur auf diesem Gerät gespeichert und direkt an api.anthropic.com geschickt.</div>
-    <label class="f">Übersetzungsmodell</label>
-    <select id="sModel">
-      <option value="claude-opus-5-5">Claude Opus 5.5 – beste Qualität (ca. 10–15 ct/Song)</option>
-      <option value="claude-sonnet-5-5">Claude Sonnet 5.5 – sehr gut (ca. 5–8 ct/Song)</option>
-      <option value="claude-haiku-5-5">Claude Haiku 5.5 – günstig (unter 1 ct/Song)</option>
-    </select>
-    <label class="f">Versatz (wenn der Text zu früh/spät kommt)</label>
-    <div class="row"><button id="offMinus">− 0,25 s</button><span id="offVal" style="flex:1;text-align:center">0,00 s</span><button id="offPlus">+ 0,25 s</button></div>
-    <label class="f">Spotify Client ID</label>
-    <input id="sClient" placeholder="aus developer.spotify.com/dashboard" autocomplete="off">
-    <div class="hint">Redirect URI in der Spotify-App: <code id="redirHint"></code></div>
-    <label class="f">Speicher</label>
-    <div class="row"><button id="btnClearCache">Übersetzungen löschen</button><span class="hint" id="cacheInfo"></span></div>
+  <div class="sheet">
+    <div class="grip"></div>
+    <h3>Anzeige</h3>
+    <div class="group">
+      <label class="item"><span>Aussprache<small>Russisch in lateinischen Buchstaben</small></span><input type="checkbox" class="switch" id="optLat"></label>
+      <label class="item"><span>Übersetzung<small>Deutsche Bedeutung pro Wort und Zeile</small></span><input type="checkbox" class="switch" id="optDe"></label>
+    </div>
+    <h3>Verbindung</h3>
+    <div class="group">
+      <div class="item"><span>Spotify<small id="spState">nicht verbunden</small></span><button class="pill green" id="btnSpotify">Verbinden</button></div>
+      <label class="item"><span>Claude Key</span><input type="password" id="sKey" placeholder="sk-ant-…" autocomplete="off"></label>
+      <label class="item"><span>Modell</span><select id="sModel">
+        <option value="claude-opus-5-5">Opus 5.5</option>
+        <option value="claude-sonnet-5-5">Sonnet 5.5</option>
+        <option value="claude-haiku-5-5">Haiku 5.5</option>
+      </select></label>
+    </div>
+    <h3>Timing</h3>
+    <div class="group">
+      <div class="item"><span>Versatz<small>falls der Text zu früh oder zu spät kommt</small></span>
+        <button class="pill" id="offMinus">−</button><span id="offVal" style="flex:none;width:58px;text-align:center">0,00 s</span><button class="pill" id="offPlus">+</button></div>
+    </div>
+    <h3>Ohne Spotify</h3>
+    <div class="group">
+      <label class="item"><span>Suchen</span><input type="search" id="q" placeholder="z. B. Vintage Eva" enterkeyhint="search"></label>
+      <div class="results" id="results"></div>
+    </div>
+    <p class="tiny"><span id="cacheInfo"></span> · <a href="#" id="btnClearCache" style="color:inherit">Übersetzungen löschen</a></p>
   </div>
 </dialog>
 
 <script>
 "use strict";
-/* Spotify Client ID: the same for every device. Fill in once after creating the Spotify app. */
 const SPOTIFY_CLIENT_ID = "494e353046cc4d5caf383ef90d21ab60";
 
 /* ---------- storage ---------- */
@@ -175,15 +147,14 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch {} },
   keys(p) { try { return Object.keys(localStorage).filter(k => k.startsWith(p)); } catch { return []; } },
 };
-const cfg = Object.assign({ clientId: "", apiKey: "", model: "claude-opus-5-5", offsetMs: 0, lat: true, de: true }, store.get("cfg", {}));
+const cfg = Object.assign({ apiKey: "", model: "claude-opus-5-5", offsetMs: 0, lat: true, de: true }, store.get("cfg", {}));
 const saveCfg = () => store.set("cfg", cfg);
-const clientId = () => SPOTIFY_CLIENT_ID || cfg.clientId;
-
-function setStatus(msg, err = false) { const s = $("#status"); s.textContent = msg || ""; s.classList.toggle("err", !!err); }
+let statusTimer;
+function setStatus(msg, sticky = false) { const s = $("#status"); s.textContent = msg || ""; clearTimeout(statusTimer); if (msg && !sticky) statusTimer = setTimeout(() => s.textContent = "", 6000); }
 const fmt = (ms) => { ms = Math.max(0, ms | 0); const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-/* ---------- fallback transliteration (used until Claude's pronunciation is ready) ---------- */
+/* ---------- fallback transliteration until Claude's pronunciation arrives ---------- */
 const TR = { а:"a",б:"b",в:"w",г:"g",д:"d",е:"e",ё:"jo",ж:"sch",з:"s",и:"i",й:"i",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"ch",ц:"z",ч:"tsch",ш:"sch",щ:"schtsch",ъ:"",ы:"y",ь:"",э:"e",ю:"ju",я:"ja" };
 const VOW = "аеёиоуыэюя";
 function translit(word) {
@@ -209,32 +180,30 @@ function stressHtml(w) {
   return html;
 }
 
-/* ---------- playback clock (Spotify or local timer) ---------- */
+/* ---------- playback clock ---------- */
 const clock = {
   source: "none", baseMs: 0, basePerf: 0, playing: false, durationMs: 0,
   now() { return (this.playing ? this.baseMs + performance.now() - this.basePerf : this.baseMs) + cfg.offsetMs; },
   set(ms, playing) { this.baseMs = ms; this.basePerf = performance.now(); this.playing = playing; },
 };
 
-/* ---------- Spotify (PKCE, no backend) ---------- */
+/* ---------- Spotify (PKCE) ---------- */
 const REDIRECT = location.origin + location.pathname;
 const SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state";
 let tok = store.get("sp_tok", null);
 const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
 async function spotifyLogin() {
-  if (!clientId()) { setStatus("Bitte zuerst die Spotify Client ID eintragen", true); $("#sClient").focus(); return; }
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
   const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
   store.set("sp_verifier", verifier);
-  location.href = "https://accounts.spotify.com/authorize?" + new URLSearchParams({ client_id: clientId(), response_type: "code",
+  location.href = "https://accounts.spotify.com/authorize?" + new URLSearchParams({ client_id: SPOTIFY_CLIENT_ID, response_type: "code",
     redirect_uri: REDIRECT, code_challenge_method: "S256", code_challenge: challenge, scope: SCOPES });
 }
 async function tokenRequest(params) {
   const r = await fetch("https://accounts.spotify.com/api/token", { method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(params) });
+    headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: SPOTIFY_CLIENT_ID, ...params }) });
   const j = await r.json();
-  if (!r.ok) { if (params.grant_type === "refresh_token") { tok = null; store.del("sp_tok"); } throw new Error(j.error_description || j.error || "Token-Fehler"); }
+  if (!r.ok) { if (params.grant_type === "refresh_token") { tok = null; store.del("sp_tok"); updateSpState(); } throw new Error(j.error_description || j.error || "Token-Fehler"); }
   tok = { access: j.access_token, refresh: j.refresh_token || tok?.refresh, exp: Date.now() + (j.expires_in - 60) * 1000 };
   store.set("sp_tok", tok);
 }
@@ -242,14 +211,14 @@ async function handleRedirect() {
   const q = new URLSearchParams(location.search);
   if (q.get("error")) setStatus("Spotify: " + q.get("error"), true);
   if (q.get("code")) {
-    try { await tokenRequest({ grant_type: "authorization_code", code: q.get("code"), redirect_uri: REDIRECT, client_id: clientId(), code_verifier: store.get("sp_verifier", "") }); }
+    try { await tokenRequest({ grant_type: "authorization_code", code: q.get("code"), redirect_uri: REDIRECT, code_verifier: store.get("sp_verifier", "") }); }
     catch (e) { setStatus("Spotify-Login fehlgeschlagen: " + e.message, true); }
   }
   if (q.has("code") || q.has("error")) history.replaceState(null, "", REDIRECT);
 }
 async function sp(path, opts = {}) {
   if (!tok) throw new Error("Spotify nicht verbunden");
-  if (Date.now() > tok.exp) await tokenRequest({ grant_type: "refresh_token", refresh_token: tok.refresh, client_id: clientId() });
+  if (Date.now() > tok.exp) await tokenRequest({ grant_type: "refresh_token", refresh_token: tok.refresh });
   const r = await fetch("https://api.spotify.com/v1" + path, { ...opts, headers: { Authorization: "Bearer " + tok.access, ...(opts.headers || {}) } });
   if (r.status === 401) { tok.exp = 0; throw new Error("Spotify-Token abgelaufen"); }
   if (r.status === 204) return null;
@@ -257,7 +226,8 @@ async function sp(path, opts = {}) {
   const t = await r.text(); return t ? JSON.parse(t) : null;
 }
 const metaOf = (it) => ({ key: "sp:" + it.id, title: it.name, artist: it.artists.map(a => a.name).join(", "),
-  firstArtist: it.artists[0]?.name || "", album: it.album?.name || "", durationMs: it.duration_ms });
+  firstArtist: it.artists[0]?.name || "", album: it.album?.name || "", durationMs: it.duration_ms,
+  image: it.album?.images?.at(-1)?.url || it.album?.images?.[0]?.url || "" });
 
 let pollTimer = null, lastQueueCheck = "";
 async function pollSpotify() {
@@ -266,29 +236,56 @@ async function pollSpotify() {
     const cp = await sp("/me/player/currently-playing");
     if (!cp || !cp.item || cp.currently_playing_type !== "track") {
       if (clock.source === "spotify") clock.playing = false;
-      if (!current.key) setStatus("Spotify verbunden – starte einen Song");
+      if (!current.key) showEmpty("Starte einen Song in Spotify.");
       return;
     }
-    clock.source = "spotify"; clock.durationMs = cp.item.duration_ms;
-    clock.set(cp.progress_ms, cp.is_playing);
+    clock.source = "spotify"; document.body.classList.remove("local");
+    clock.durationMs = cp.item.duration_ms; clock.set(cp.progress_ms, cp.is_playing);
     const meta = metaOf(cp.item);
     if (meta.key !== current.key) { loadTrack(meta); prefetchNext(meta.key); }
-  } catch (e) { setStatus(e.message, true); }
+  } catch (e) { setStatus(e.message); }
 }
-/* Translate the next song in the queue while this one plays, so it is ready instantly */
 async function prefetchNext(key) {
   if (lastQueueCheck === key || !cfg.apiKey) return; lastQueueCheck = key;
   try {
-    const q = await sp("/me/player/queue");
-    for (const it of (q?.queue || []).slice(0, 1)) {
-      if (!it?.id || it.type !== "track") continue;
-      const meta = metaOf(it); const lyr = await findLyrics(meta);
-      if (lyr?.lines?.length) await glossLyrics(meta, lyr);
-    }
+    const it = (await sp("/me/player/queue"))?.queue?.[0];
+    if (!it?.id || it.type !== "track") return;
+    const meta = metaOf(it), lyr = await findLyrics(meta);
+    if (lyr?.lines?.length) await glossLyrics(meta, lyr);
   } catch (e) { console.warn("prefetch", e); }
 }
-function startPolling() { $("#btnSpotify").textContent = "Spotify verbunden ✓"; clearInterval(pollTimer); pollSpotify(); pollTimer = setInterval(pollSpotify, 1500); }
+function startPolling() { updateSpState(); clearInterval(pollTimer); pollSpotify(); pollTimer = setInterval(pollSpotify, 1500); }
+function updateSpState() { $("#spState").textContent = tok ? "verbunden" : "nicht verbunden"; $("#btnSpotify").textContent = tok ? "Neu verbinden" : "Verbinden"; }
 document.addEventListener("visibilitychange", () => { if (!document.hidden && clock.source === "spotify") pollSpotify(); requestWakeLock(); });
+
+/* ---------- album colour as background ---------- */
+function setBackground(url) {
+  const fallback = "#3b2350";
+  const apply = (c) => { document.documentElement.style.setProperty("--bg", c); document.querySelector('meta[name="theme-color"]').content = c; };
+  if (!url) return apply(fallback);
+  const img = new Image(); img.crossOrigin = "anonymous";
+  img.onload = () => {
+    try {
+      const c = document.createElement("canvas"); c.width = c.height = 16; const x = c.getContext("2d");
+      x.drawImage(img, 0, 0, 16, 16); const d = x.getImageData(0, 0, 16, 16).data;
+      let best = null, score = -1;               // pick the most colourful pixel, not the muddy average
+      for (let i = 0; i < d.length; i += 4) {
+        const [r, g, b] = [d[i], d[i + 1], d[i + 2]], mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        const s = mx === 0 ? 0 : (mx - mn) / mx, v = mx / 255, sc = s * (0.4 + v);
+        if (sc > score) { score = sc; best = [r, g, b]; }
+      }
+      const [h, s] = rgbToHsl(...best);
+      apply(`hsl(${Math.round(h)} ${Math.round(Math.min(65, Math.max(28, s)))}% 24%)`);
+    } catch { apply(fallback); }
+  };
+  img.onerror = () => apply(fallback); img.src = url;
+}
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2; let h = 0, s = 0;
+  if (mx !== mn) { const d = mx - mn; s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn);
+    h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; }
+  return [h, s * 100, l * 100];
+}
 
 /* ---------- lyrics (LRCLIB) ---------- */
 const LRCLIB = "https://lrclib.net/api";
@@ -302,11 +299,9 @@ function parseLRC(lrc) {
   }
   return lines.sort((a, b) => a.t - b.t);
 }
-const plainLines = (txt) => txt.split(/\r?\n/).map((text, i) => ({ t: i * 4000, text: text.trim() }));
 const cleanTitle = (t) => t.replace(/\s*[-–]\s*(remaster|live|version|radio|edit|mono|stereo).*$/i, "").replace(/\s*[\(\[](feat|ft|remaster|live|prod)[^\)\]]*[\)\]]/ig, "").trim();
 const recToLyrics = (x) => ({ id: x.id, instrumental: !!x.instrumental, synced: !!x.syncedLyrics,
-  lines: x.syncedLyrics ? parseLRC(x.syncedLyrics) : plainLines(x.plainLyrics || "") });
-
+  lines: x.syncedLyrics ? parseLRC(x.syncedLyrics) : (x.plainLyrics || "").split(/\r?\n/).map((text, i) => ({ t: i * 4000, text: text.trim() })) });
 async function findLyrics(m) {
   const ck = "lyr:" + m.key, cached = store.get(ck, null);
   if (cached) return cached;
@@ -330,7 +325,7 @@ async function findLyrics(m) {
 const SYSTEM = `Du hilfst deutschsprachigen Russisch-Anfängern, Songtexte beim Hören mitzulesen. Sie kennen das kyrillische Alphabet, lesen aber noch langsam.
 Für jede Eingabezeile:
 - "de": natürliche, sinngemäße deutsche Übersetzung der ganzen Zeile.
-- "words": JEDES Wort der Zeile in Original-Reihenfolge, ohne Satzzeichen (Bindestrich-Wörter wie что-то bleiben ein Wort):
+- "words": JEDES Wort der Zeile in Original-Reihenfolge, ohne Satzzeichen und Klammern (Bindestrich-Wörter wie что-то bleiben ein Wort):
   - "ru": das Wort exakt wie im Text geschrieben.
   - "stress": dasselbe Wort mit Betonungszeichen U+0301 direkt nach dem betonten Vokal (bei einsilbigen Wörtern und bei ё keins).
   - "lat": die Aussprache in deutscher Schreibweise, so wie ein Deutscher sie lesen würde: w, s, sch, tsch, schtsch, ch, z, j (ja, je, jo, ju). Schreib, wie es tatsächlich klingt (unbetontes o wie a: молоко → malakó; его → jewó; что → schto; сегодня → sewódnja), den betonten Vokal mit Akut (á é í ó ú ý).
@@ -344,7 +339,6 @@ const SCHEMA = { type: "object", additionalProperties: false, required: ["summar
     i: { type: "integer" }, de: { type: "string" },
     words: { type: "array", items: { type: "object", additionalProperties: false, required: ["ru", "stress", "lat", "de"],
       properties: { ru: { type: "string" }, stress: { type: "string" }, lat: { type: "string" }, de: { type: "string" } } } } } } } } };
-
 async function callClaude(meta, chunk) {
   const model = cfg.model;
   const body = { model, max_tokens: 16000, output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } }, system: SYSTEM,
@@ -362,7 +356,7 @@ const inflight = {};
 function glossLyrics(meta, lyrics, onProgress) {
   const ck = "gloss2:" + (lyrics.id ?? meta.key), cached = store.get(ck, null);
   if (cached) return Promise.resolve(cached);
-  if (!cfg.apiKey) return Promise.reject(new Error("Für Übersetzungen: Claude API Key in ⚙︎ eintragen"));
+  if (!cfg.apiKey) return Promise.reject(new Error("Für Übersetzungen den Claude Key in den Einstellungen eintragen"));
   return inflight[ck] ??= (async () => {
     try {
       const uniq = [...new Set(lyrics.lines.map(l => l.text).filter(t => t && /\p{L}/u.test(t)))];
@@ -378,86 +372,79 @@ function glossLyrics(meta, lyrics, onProgress) {
   })();
 }
 
-/* ---------- loading + rendering ---------- */
-const current = { key: null, meta: null, lyrics: null, gloss: null, lineIdx: -2, loadId: 0 };
+/* ---------- track loading ---------- */
+const current = { key: null, meta: null, lyrics: null, gloss: null, items: [], idx: -2, loadId: 0 };
+function showEmpty(msg) { $("#lyrics").innerHTML = `<div class="empty">${esc(msg)}</div>`; current.items = []; }
 async function loadTrack(meta) {
   const id = ++current.loadId;
-  Object.assign(current, { key: meta.key, meta, lyrics: null, gloss: null, lineIdx: -2 });
+  Object.assign(current, { key: meta.key, meta, lyrics: null, gloss: null, idx: -2 });
   $("#hTitle").textContent = meta.title; $("#hArtist").textContent = meta.artist;
-  $("#summary").hidden = true; showMessage("Suche Liedtext …"); setStatus("");
+  setBackground(meta.image); showEmpty("Suche Liedtext …"); setStatus("");
+  window.scrollTo({ top: 0 });
   let lyrics;
-  try { lyrics = await findLyrics(meta); } catch (e) { if (id === current.loadId) showMessage("Liedtext-Suche fehlgeschlagen: " + e.message); return; }
+  try { lyrics = await findLyrics(meta); } catch (e) { if (id === current.loadId) showEmpty("Liedtext-Suche fehlgeschlagen."); return; }
   if (id !== current.loadId) return;
-  if (!lyrics?.lines?.length) { showMessage(lyrics?.instrumental ? "Instrumental – kein Text." : "Kein Liedtext gefunden. Unter ☰ → Suchen kannst du manuell suchen."); renderList(); return; }
-  current.lyrics = lyrics;
-  if (!lyrics.synced) setStatus("Nur Text ohne Zeitstempel – mit ⏮ ⏭ zeilenweise weiter");
-  renderList(); if (!lyrics.synced) { current.lineIdx = 0; renderCurrent(0); }
+  if (!lyrics?.lines?.length) { showEmpty(lyrics?.instrumental ? "Instrumental ♪" : "Für diesen Song gibt es leider keinen Liedtext."); return; }
+  current.lyrics = lyrics; render();
   try {
-    const cached = store.get("gloss2:" + (lyrics.id ?? meta.key), null);
-    if (!cached) setStatus("Übersetze … (beim ersten Mal ca. 20–40 s)");
-    const g = await glossLyrics(meta, lyrics, (d, n) => n > 1 && setStatus(`Übersetze … ${d}/${n}`));
+    if (!store.get("gloss2:" + (lyrics.id ?? meta.key), null) && cfg.apiKey) setStatus("Übersetze …", true);
+    const g = await glossLyrics(meta, lyrics, (d, n) => n > 1 && setStatus(`Übersetze … ${d}/${n}`, true));
     if (id !== current.loadId) return;
-    current.gloss = g; setStatus(lyrics.synced ? "" : $("#status").textContent);
-    renderList(); const i = current.lineIdx; current.lineIdx = -2; if (!lyrics.synced) { current.lineIdx = i; renderCurrent(i); }
-    if (g.summary) { $("#summaryText").textContent = g.summary; $("#summary").hidden = false; }
+    current.gloss = g; setStatus(""); render();
   } catch (e) { if (id === current.loadId) setStatus(e.message, true); }
 }
-function showMessage(msg) {
-  $("#curWords").innerHTML = `<div class="empty">${esc(msg)}</div>`; $("#curDe").hidden = true;
-  $("#prevLine").textContent = ""; $("#nextLine").textContent = "";
-}
+
+/* ---------- rendering: lines split into rows of max 5 words ---------- */
 function wordsFor(text) {
   const g = current.gloss?.byText?.[text];
   if (g?.words?.length) return g.words;
   return text.split(/\s+/).map(w => w.replace(/^[^\p{L}\d]+|[^\p{L}\d]+$/gu, "")).filter(Boolean).map(w => ({ ru: w, stress: w, lat: translit(w), de: "" }));
 }
-const lineDe = (text) => current.gloss?.byText?.[text]?.de || "";
-function lineTiming(i) {
-  const L = current.lyrics.lines, t0 = L[i].t, syl = wordsFor(L[i].text).map(w => syllables(w.ru));
-  const total = syl.reduce((a, b) => a + b, 0), next = L[i + 1]?.t ?? clock.durationMs ?? t0 + 5000;
-  const t1 = Math.min(next - 150, t0 + Math.max(1500, total * 450));
-  const starts = []; let acc = 0; for (const s of syl) { starts.push(t0 + (t1 - t0) * acc / total); acc += s; }
-  return { t0, t1, starts };
+function rowsOf(words) {          // ≤ 5 words per row, rows as even as possible (7 → 4+3)
+  const n = Math.ceil(words.length / 5) || 1, size = Math.ceil(words.length / n), rows = [];
+  for (let i = 0; i < words.length; i += size) rows.push(words.slice(i, i + size));
+  return rows;
 }
-let vocab = store.get("vocab", []);
-const isSaved = (ru) => vocab.some(v => v.ru.toLowerCase() === ru.toLowerCase());
-function renderCurrent(i) {
-  const L = current.lyrics.lines, line = L[i];
-  const ctx = (l) => l?.text ? `${esc(l.text)}${lineDe(l.text) ? `<div class="de">${esc(lineDe(l.text))}</div>` : ""}` : "";
-  $("#prevLine").innerHTML = i > 0 ? ctx(L[i - 1]) : ""; $("#nextLine").innerHTML = ctx(L[i + 1]);
-  if (!line?.text) { $("#curWords").innerHTML = `<div class="empty">♪</div>`; $("#curDe").hidden = true; return; }
-  const words = wordsFor(line.text);
-  $("#curWords").innerHTML = words.map((w, k) => `<div class="w${isSaved(w.ru) ? " saved" : ""}" data-k="${k}">
-    <span class="ru">${stressHtml(w.stress || w.ru)}</span><span class="lat">${esc(w.lat || translit(w.ru))}</span><span class="de">${esc(w.de || "")}</span></div>`).join("");
-  $("#curWords").querySelectorAll(".w").forEach(el => el.onclick = () => { toggleVocab(words[+el.dataset.k], line.text); el.classList.toggle("saved", isSaved(words[+el.dataset.k].ru)); });
-  $("#curDe").textContent = lineDe(line.text); $("#curDe").hidden = !lineDe(line.text);
-  document.querySelectorAll(".lyr").forEach(el => el.classList.toggle("on", +el.dataset.i === i));
+function render() {
+  const L = current.lyrics.lines, synced = current.lyrics.synced, items = [];
+  let html = "", wordIdx = 0;
+  L.forEach((l, i) => {
+    const next = L[i + 1]?.t ?? clock.durationMs;
+    if (!l.text) { if (synced) { items.push({ t: l.t, pause: true }); html += `<div class="pause" data-k="${items.length - 1}">• • •</div>`; } return; }
+    const words = wordsFor(l.text), de = current.gloss?.byText?.[l.text]?.de || "";
+    items.push({ t: l.t, i, words });
+    html += `<div class="line" data-k="${items.length - 1}">` + rowsOf(words).map(r => `<div class="row">` + r.map(w =>
+      `<span class="w"><span class="ru">${stressHtml(w.stress || w.ru)}</span><span class="lat">${esc(w.lat || translit(w.ru))}</span><span class="de">${esc(w.de || " ")}</span></span>`).join("") + `</div>`).join("")
+      + (de ? `<div class="tr">${esc(de)}</div>` : "") + `</div>`;
+    // long instrumental gap after this line → show a pause marker
+    if (synced && next - l.t > 12000 && L[i + 1]?.text !== "") { const t = l.t + Math.max(4000, syllablesOf(words) * 450 + 1500); items.push({ t, pause: true }); html += `<div class="pause" data-k="${items.length - 1}">• • •</div>`; }
+  });
+  current.items = items; current.idx = -2;
+  const main = $("#lyrics"); main.innerHTML = html; main.classList.toggle("unsynced", !synced);
+  main.querySelectorAll("[data-k]").forEach(el => el.onclick = () => synced && seekTo(items[+el.dataset.k].t + 1));
+  if (!synced) setStatus("Für diesen Song gibt es nur Text ohne Timing", true);
 }
-function renderList() {
-  const pane = $("#pane-lyrics");
-  if (!current.lyrics) { pane.innerHTML = '<div class="hint">Kein Text.</div>'; return; }
-  pane.innerHTML = current.lyrics.lines.map((l, i) => l.text ? `<div class="lyr" data-i="${i}">
-    ${current.lyrics.synced ? `<div class="ts">${fmt(l.t)}</div>` : ""}<div class="ru">${esc(l.text)}</div>
-    <div class="lat">${esc(wordsFor(l.text).map(w => w.lat || translit(w.ru)).join(" "))}</div><div class="de">${esc(lineDe(l.text))}</div></div>` : "").join("");
-  pane.querySelectorAll(".lyr").forEach(el => el.onclick = () => { seekToLine(+el.dataset.i); $("#sheet").close(); });
-}
+const syllablesOf = (words) => words.reduce((a, w) => a + syllables(w.ru), 0);
 
-/* ---------- animation loop ---------- */
-function findLine(t) { const L = current.lyrics.lines; let lo = 0, hi = L.length - 1, a = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (L[m].t <= t) { a = m; lo = m + 1; } else hi = m - 1; } return a; }
+/* ---------- karaoke loop ---------- */
+let userScrollUntil = 0;
+["wheel", "touchmove"].forEach(ev => addEventListener(ev, () => userScrollUntil = performance.now() + 4000, { passive: true }));
+function findItem(t) { const it = current.items; let lo = 0, hi = it.length - 1, a = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (it[m].t <= t) { a = m; lo = m + 1; } else hi = m - 1; } return a; }
 function tick() {
-  const t = clock.now();
-  $("#time").textContent = clock.source === "none" ? "" : fmt(t) + (clock.durationMs ? " / " + fmt(clock.durationMs) : "") + (clock.playing ? "" : "  ·  pausiert");
-  if (current.lyrics?.synced) {
-    const i = findLine(t);
-    if (i !== current.lineIdx) {
-      current.lineIdx = i;
-      if (i < 0) { showMessage("♪ Intro …"); $("#nextLine").textContent = current.lyrics.lines[0]?.text || ""; } else renderCurrent(i);
+  if (current.lyrics?.synced && current.items.length) {
+    const t = clock.now(), k = findItem(t), els = $("#lyrics").children;
+    if (k !== current.idx) {
+      current.idx = k;
+      for (let j = 0; j < els.length; j++) { els[j].classList.toggle("active", j === k); els[j].classList.toggle("past", j < k); }
+      const el = els[Math.max(0, k)];
+      if (el && performance.now() > userScrollUntil) window.scrollTo({ top: el.offsetTop - innerHeight * 0.32, behavior: "smooth" });
     }
-    if (i >= 0) {
-      const { t0, t1, starts } = lineTiming(i);
-      $("#lineProg").style.width = Math.min(100, Math.max(0, 100 * (t - t0) / (t1 - t0))) + "%";
-      let active = -1; starts.forEach((s, k) => { if (t >= s && t < t1 + 300) active = k; });
-      $("#curWords").querySelectorAll(".w").forEach((el, k) => el.classList.toggle("active", k === active));
+    const item = current.items[k];
+    if (item && !item.pause) {     // estimated word timing inside the active line
+      const next = current.items[k + 1]?.t ?? clock.durationMs, total = syllablesOf(item.words);
+      const t1 = Math.min(next - 150, item.t + Math.max(1500, total * 450));
+      let acc = 0; const ws = els[k].querySelectorAll(".w");
+      item.words.forEach((w, n) => { const s = item.t + (t1 - item.t) * acc / total; ws[n]?.classList.toggle("sung", t >= s); acc += syllables(w.ru); });
     }
   }
   requestAnimationFrame(tick);
@@ -465,105 +452,62 @@ function tick() {
 
 /* ---------- controls ---------- */
 async function seekTo(ms) {
-  ms = Math.max(0, Math.round(ms - cfg.offsetMs)); clock.set(ms, clock.playing);
-  if (clock.source === "spotify") try { await sp(`/me/player/seek?position_ms=${ms}`, { method: "PUT" }); } catch (e) { setStatus(e.message, true); }
+  ms = Math.max(0, Math.round(ms - cfg.offsetMs)); clock.set(ms, clock.playing); userScrollUntil = 0;
+  if (clock.source === "spotify") try { await sp(`/me/player/seek?position_ms=${ms}`, { method: "PUT" }); } catch (e) { setStatus(e.message); }
 }
-function seekToLine(i) {
-  if (!current.lyrics) return;
-  const L = current.lyrics.lines; i = Math.max(0, Math.min(L.length - 1, i));
-  if (!current.lyrics.synced) { current.lineIdx = i; renderCurrent(i); return; }
-  current.lineIdx = -2; seekTo(L[i].t + 1);
-}
-async function togglePlay() {
+function togglePlay() {
   const was = clock.playing; clock.set(clock.now() - cfg.offsetMs, !was);
-  if (clock.source === "spotify") try { await sp(`/me/player/${was ? "pause" : "play"}`, { method: "PUT" }); } catch (e) { setStatus(e.message, true); }
+  $("#btnPlay").innerHTML = was ? '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"/></svg>'
+    : '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+  if (clock.source === "spotify") sp(`/me/player/${was ? "pause" : "play"}`, { method: "PUT" }).catch(e => setStatus(e.message));
 }
-const curLine = () => current.lyrics?.synced ? findLine(clock.now()) : current.lineIdx;
-$("#btnRepeat").onclick = () => seekToLine(Math.max(0, curLine()));
-$("#btnPrev").onclick = () => seekToLine(curLine() - 1);
-$("#btnNext").onclick = () => seekToLine(curLine() + 1);
 $("#btnPlay").onclick = togglePlay;
-document.addEventListener("keydown", (e) => {
-  if (e.target.matches("input, select, textarea")) return;
-  if (e.code === "Space") { e.preventDefault(); togglePlay(); }
-  else if (e.key === "r" || e.key === "R") $("#btnRepeat").click();
-  else if (e.key === "ArrowLeft") $("#btnPrev").click();
-  else if (e.key === "ArrowRight") $("#btnNext").click();
-});
-function applyToggles() {
-  document.body.classList.toggle("no-lat", !cfg.lat); document.body.classList.toggle("no-de", !cfg.de);
-  $("#tLat").classList.toggle("on", cfg.lat); $("#tDe").classList.toggle("on", cfg.de);
-}
-$("#tLat").onclick = () => { cfg.lat = !cfg.lat; saveCfg(); applyToggles(); };
-$("#tDe").onclick = () => { cfg.de = !cfg.de; saveCfg(); applyToggles(); };
-
-/* keep the phone screen on while reading along */
+document.addEventListener("keydown", (e) => { if (!e.target.matches("input, select") && e.code === "Space") { e.preventDefault(); togglePlay(); } });
 let wakeLock = null;
 async function requestWakeLock() { try { if ("wakeLock" in navigator && !document.hidden && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => wakeLock = null); } } catch {} }
 
-/* ---------- search (no Spotify) ---------- */
-$("#btnSearch").onclick = async () => {
-  const q = $("#q").value.trim(); if (!q) return;
-  $("#results").innerHTML = '<div class="hint">Suche …</div>';
-  try {
-    const list = (await (await fetch(`${LRCLIB}/search?q=${encodeURIComponent(q)}`)).json()).filter(x => x.syncedLyrics || x.plainLyrics).slice(0, 25);
-    $("#results").innerHTML = list.length ? list.map((x, k) => `<div class="result" data-k="${k}"><div>${esc(x.trackName)}</div>
-      <small>${esc(x.artistName)} · ${fmt(x.duration * 1000)} ${x.syncedLyrics ? "· synchron" : "· nur Text"}</small></div>`).join("") : '<div class="hint">Nichts gefunden.</div>';
-    $("#results").querySelectorAll(".result").forEach(el => el.onclick = () => {
-      const x = list[+el.dataset.k], key = "lrclib:" + x.id;
-      store.set("lyr:" + key, recToLyrics(x));
-      clearInterval(pollTimer); clock.source = "local"; clock.durationMs = x.duration * 1000; clock.set(0, false);
-      loadTrack({ key, title: x.trackName, artist: x.artistName, firstArtist: x.artistName, album: x.albumName || "", durationMs: x.duration * 1000 });
-      $("#sheet").close(); setStatus("Eigener Timer – ⏯ startet");
-    });
-  } catch (e) { $("#results").innerHTML = `<div class="hint">Fehler: ${esc(e.message)}</div>`; }
-};
-$("#q").onkeydown = (e) => { if (e.key === "Enter") $("#btnSearch").click(); };
-
-/* ---------- vocabulary ---------- */
-function toggleVocab(w, line) {
-  if (isSaved(w.ru)) vocab = vocab.filter(v => v.ru.toLowerCase() !== w.ru.toLowerCase());
-  else vocab.unshift({ ru: w.ru, stress: w.stress || w.ru, lat: w.lat || translit(w.ru), de: w.de, line, song: current.meta ? `${current.meta.artist} – ${current.meta.title}` : "", at: Date.now() });
-  store.set("vocab", vocab); renderVocab();
-}
-function renderVocab() {
-  $("#vocabList").innerHTML = vocab.length ? vocab.map((v, k) => `<div class="vocab"><div>${stressHtml(v.stress)}<small>${esc(v.lat)}</small></div><div>${esc(v.de)}</div><button data-k="${k}" aria-label="Entfernen">✕</button></div>`).join("")
-    : '<div class="hint">Noch keine Wörter gespeichert.</div>';
-  $("#vocabList").querySelectorAll("button").forEach(b => b.onclick = () => { vocab.splice(+b.dataset.k, 1); store.set("vocab", vocab); renderVocab(); });
-}
-$("#btnExport").onclick = () => {
-  const q = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
-  const csv = vocab.map(v => [v.stress, v.lat, v.de, v.line, v.song].map(q).join(";")).join("\n");
-  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
-  a.download = "russisch-vokabeln.csv"; a.click();
-};
-
-/* ---------- dialogs + settings ---------- */
-document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => b.closest("dialog").close());
-document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
-  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
-  document.querySelectorAll(".pane").forEach(p => p.classList.toggle("on", p.id === "pane-" + b.dataset.tab));
-});
-$("#btnSheet").onclick = () => { $("#sheet").showModal(); document.querySelector(".lyr.on")?.scrollIntoView({ block: "center" }); };
-const showOff = () => $("#offVal").textContent = (cfg.offsetMs / 1000).toFixed(2).replace(".", ",") + " s";
-$("#btnSettings").onclick = () => {
-  $("#sKey").value = cfg.apiKey; $("#sModel").value = cfg.model; $("#sClient").value = clientId();
-  $("#redirHint").textContent = REDIRECT; $("#cacheInfo").textContent = store.keys("gloss2:").length + " Songs gespeichert";
-  showOff(); $("#settings").showModal();
-};
-$("#sKey").onchange = () => { cfg.apiKey = $("#sKey").value.trim(); saveCfg(); if (current.meta && current.lyrics && !current.gloss) loadTrack(current.meta); };
-$("#sModel").onchange = () => { cfg.model = $("#sModel").value; saveCfg(); };
-$("#sClient").onchange = () => { cfg.clientId = $("#sClient").value.trim(); saveCfg(); };
+/* ---------- settings ---------- */
+function applyToggles() { document.body.classList.toggle("no-lat", !cfg.lat); document.body.classList.toggle("no-de", !cfg.de); $("#optLat").checked = cfg.lat; $("#optDe").checked = cfg.de; }
+$("#optLat").onchange = (e) => { cfg.lat = e.target.checked; saveCfg(); applyToggles(); };
+$("#optDe").onchange = (e) => { cfg.de = e.target.checked; saveCfg(); applyToggles(); };
+const showOff = () => $("#offVal").textContent = (cfg.offsetMs >= 0 ? "+" : "") + (cfg.offsetMs / 1000).toFixed(2).replace(".", ",") + " s";
 $("#offMinus").onclick = () => { cfg.offsetMs -= 250; saveCfg(); showOff(); };
 $("#offPlus").onclick = () => { cfg.offsetMs += 250; saveCfg(); showOff(); };
-$("#btnClearCache").onclick = () => { store.keys("gloss2:").forEach(store.del); $("#cacheInfo").textContent = "gelöscht"; };
-$("#btnSpotify").onclick = () => { if (tok) { startPolling(); $("#settings").close(); } else spotifyLogin(); };
+$("#sKey").onchange = () => { cfg.apiKey = $("#sKey").value.trim(); saveCfg(); if (current.meta && current.lyrics && !current.gloss) loadTrack(current.meta); };
+$("#sModel").onchange = () => { cfg.model = $("#sModel").value; saveCfg(); };
+$("#btnSpotify").onclick = () => spotifyLogin();
+$("#btnClearCache").onclick = (e) => { e.preventDefault(); store.keys("gloss2:").forEach(store.del); $("#cacheInfo").textContent = "0 Songs gespeichert"; };
+$("#btnSettings").onclick = () => {
+  $("#sKey").value = cfg.apiKey; $("#sModel").value = cfg.model; showOff(); updateSpState();
+  $("#cacheInfo").textContent = store.keys("gloss2:").length + " Songs gespeichert"; $("#settings").showModal();
+};
+$("#settings").addEventListener("click", (e) => { if (e.target === $("#settings")) $("#settings").close(); });   // tap outside closes
+
+/* manual search (no Spotify) */
+$("#q").addEventListener("keydown", async (e) => {
+  if (e.key !== "Enter") return;
+  const q = $("#q").value.trim(); if (!q) return;
+  $("#results").innerHTML = '<div class="item"><span>Suche …</span></div>';
+  try {
+    const list = (await (await fetch(`${LRCLIB}/search?q=${encodeURIComponent(q)}`)).json()).filter(x => x.syncedLyrics || x.plainLyrics).slice(0, 12);
+    $("#results").innerHTML = list.length ? list.map((x, k) => `<div class="item" data-k="${k}"><span>${esc(x.trackName)}<small>${esc(x.artistName)} · ${fmt(x.duration * 1000)}</small></span></div>`).join("")
+      : '<div class="item"><span>Nichts gefunden</span></div>';
+    $("#results").querySelectorAll("[data-k]").forEach(el => el.onclick = () => {
+      const x = list[+el.dataset.k], key = "lrclib:" + x.id;
+      store.set("lyr:" + key, recToLyrics(x));
+      clearInterval(pollTimer); clock.source = "local"; document.body.classList.add("local");
+      clock.durationMs = x.duration * 1000; clock.set(0, false);
+      loadTrack({ key, title: x.trackName, artist: x.artistName, firstArtist: x.artistName, album: x.albumName || "", durationMs: x.duration * 1000, image: "" });
+      $("#settings").close();
+    });
+  } catch (err) { $("#results").innerHTML = `<div class="item"><span>Fehler: ${esc(err.message)}</span></div>`; }
+});
 
 (async function init() {
-  applyToggles(); renderVocab();
+  applyToggles();
   await handleRedirect();
-  if (tok) startPolling();
-  else setStatus("Tippe auf ⚙︎, um Spotify zu verbinden");
+  if (tok) { startPolling(); showEmpty("Starte einen Song in Spotify."); }
+  if (tok && !cfg.apiKey) setStatus("Tipp: Claude Key in den Einstellungen eintragen", true);
   document.addEventListener("click", requestWakeLock, { once: true });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   requestAnimationFrame(tick);

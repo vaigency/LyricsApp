@@ -68,6 +68,16 @@
     font-size: 13px; color: #fff; background: rgba(20,20,22,.88); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); padding: 6px 14px; border-radius: 999px;
     max-width: calc(100vw - 32px); text-align: center; transition: opacity .3s; }
   .status:empty { opacity: 0; }
+  .loader { position: fixed; z-index: 5; left: 50%; transform: translateX(-50%); top: calc(94px + var(--safe-t)); width: min(320px, calc(100vw - 32px));
+    background: rgba(20,20,22,.9); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 14px; padding: 10px 14px 11px; display: none; }
+  .loader.on { display: block; }
+  .loader .lt { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; }
+  .loader .ls { font-size: 12px; color: var(--soft); margin: 2px 0 0 26px; }
+  .loader .lbar { height: 3px; border-radius: 3px; background: rgba(255,255,255,.15); margin: 8px 0 0 26px; overflow: hidden; }
+  .loader .lbar div { height: 100%; width: 0; background: var(--de); border-radius: 3px; transition: width .5s linear; }
+  .spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,255,255,.2); border-top-color: #fff; animation: spin .8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  body.loading .status { top: calc(170px + var(--safe-t)); }
 
   /* ---------- lyrics ---------- */
   main { max-width: 820px; margin: 0 auto; padding: calc(42vh) 22px 55vh; }
@@ -155,6 +165,7 @@
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
 </button>
 <div class="status" id="status"></div>
+<div class="loader" id="loader"><div class="lt"><span class="spin"></span><span id="loaderText"></span></div><div class="ls" id="loaderSub"></div><div class="lbar" id="loaderBar"><div id="loaderFill"></div></div></div>
 <main id="lyrics"><div class="empty">Öffne oben rechts die Einstellungen<br>und verbinde Spotify.</div></main>
 <div class="ctrl"><div class="inner">
   <div class="bar" id="bar"><div class="track"><div class="fill" id="fill"></div></div></div>
@@ -563,13 +574,35 @@ $("#syncBadge").onclick = () => { const el = $("#syncBadge"); if (el.title) setS
 
 /* ---------- track loading ---------- */
 const current = { key: null, meta: null, lyrics: null, gloss: null, items: [], idx: -2, loadId: 0 };
+/* loading indicator: spinner + text, optional progress bar with an estimated time */
+let loaderTimer = null;
+function showLoader(text, sub = "", estMs = 0) {
+  clearInterval(loaderTimer); $("#loaderText").textContent = text; $("#loaderSub").textContent = sub;
+  $("#loader").classList.add("on"); document.body.classList.add("loading");
+  $("#loaderBar").style.display = estMs ? "" : "none"; $("#loaderFill").style.width = "0";
+  if (!estMs) return;
+  const t0 = Date.now();
+  const upd = () => {
+    const el = Date.now() - t0, left = Math.ceil((estMs - el) / 1000);
+    $("#loaderFill").style.width = Math.min(95, 100 * el / estMs) + "%";     // never shows "done" before it is
+    $("#loaderSub").textContent = sub + (left > 3 ? ` · noch ca. ${left} s` : " · gleich fertig …");
+  };
+  upd(); loaderTimer = setInterval(upd, 500);
+}
+function hideLoader() { clearInterval(loaderTimer); $("#loader").classList.remove("on"); document.body.classList.remove("loading"); }
+function estimateGlossMs(lines) {   // chunks of 35 lines run in parallel → the biggest chunk sets the time
+  const n = Math.min(35, new Set(lines.map(l => l.text).filter(t => /\p{L}/u.test(t || ""))).size);
+  const perLine = cfg.model.includes("haiku") ? 250 : cfg.model.includes("sonnet") ? 550 : 900;
+  return 6000 + n * perLine;
+}
+
 function showEmpty(msg) { $("#lyrics").innerHTML = `<div class="empty">${esc(msg)}</div>`; current.items = []; if (!current.lyrics) $("#syncBadge").innerHTML = ""; }
 async function loadTrack(meta) {
   const id = ++current.loadId;
   commitPending(); stopLoop(true);
   Object.assign(current, { key: meta.key, meta, lyrics: null, gloss: null, idx: -2 }); loadKeyframes(meta.key);
   $("#hTitle").textContent = meta.title; $("#hArtist").textContent = meta.artist; showTitleTr("", "");
-  setBackground(meta.image); showEmpty("Suche Liedtext …"); setStatus("");
+  setBackground(meta.image); showEmpty(""); setStatus(""); hideLoader();
   window.scrollTo({ top: 0 });
   const lib = libEntry(meta);
   if (lib) {
@@ -577,16 +610,20 @@ async function loadTrack(meta) {
     current.gloss = { summary: lib.summary, byText: lib.byText }; showTitleTr(lib.titleLat, lib.titleDe); render(); markNow(); return;
   }
   let lyrics;
-  try { lyrics = await findLyrics(meta); } catch (e) { if (id === current.loadId) showEmpty("Liedtext-Suche fehlgeschlagen."); return; }
+  const searchT = setTimeout(() => id === current.loadId && showLoader("Suche Liedtext …", "in der Lyrics-Datenbank"), 250);   // no flash when cached
+  try { lyrics = await findLyrics(meta); } catch (e) { if (id === current.loadId) { hideLoader(); showEmpty("Liedtext-Suche fehlgeschlagen."); } return; }
+  finally { clearTimeout(searchT); }
   if (id !== current.loadId) return;
+  hideLoader();
   if (!lyrics?.lines?.length) { showEmpty(lyrics?.instrumental ? "Instrumental ♪" : "Für diesen Song gibt es leider keinen Liedtext."); return; }
   current.lyrics = estimateTiming(lyrics, meta.durationMs); render();
   try {
-    if (!store.get("gloss2:" + (lyrics.id ?? meta.key), null) && cfg.apiKey) setStatus("Übersetze …", true);
-    const g = await glossLyrics(meta, lyrics, (d, n) => n > 1 && setStatus(`Übersetze … ${d}/${n}`, true));
+    if (!store.get("gloss2:" + (lyrics.id ?? meta.key), null) && cfg.apiKey)
+      showLoader("Übersetzung läuft …", "Text ist schon da, Bedeutungen folgen", estimateGlossMs(lyrics.lines));
+    const g = await glossLyrics(meta, lyrics);
     if (id !== current.loadId) return;
-    current.gloss = g; setStatus(""); render(); showTitleTr(g.titleLat, g.titleDe); rememberSong(meta, g);
-  } catch (e) { if (id === current.loadId) setStatus(e.message, true); }
+    hideLoader(); current.gloss = g; setStatus(""); render(); showTitleTr(g.titleLat, g.titleDe); rememberSong(meta, g);
+  } catch (e) { if (id === current.loadId) { hideLoader(); setStatus(e.message, true); } }
 }
 
 /* lyrics without timestamps: spread the lines over the song by syllables (intro/outro left free) */

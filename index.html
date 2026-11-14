@@ -605,16 +605,22 @@ function rowsOf(words) {          // ≤ 5 words per row, rows as even as possib
 function render() {
   const L = current.lyrics.lines, synced = current.lyrics.synced, items = [];
   let html = "", wordIdx = 0;
+  // lines without letters ("", "♪", "…") mark instrumental parts: a pause only if it lasts ≥ 6 s,
+  // otherwise ignored so the sung line keeps its highlight
+  const isText = (t) => /[\p{L}\d]/u.test(t || "");
+  const nextTextT = (i) => { for (let j = i + 1; j < L.length; j++) if (isText(L[j].text)) return L[j].t; return clock.durationMs || L[L.length - 1].t + 8000; };
+  const isPause = (i) => synced && !isText(L[i].text) && nextTextT(i) - L[i].t >= 6000;
   L.forEach((l, i) => {
-    const next = L[i + 1]?.t ?? clock.durationMs;
-    if (!l.text) { if (synced) { items.push({ t: l.t, pause: true }); html += `<div class="pause" data-k="${items.length - 1}">• • •</div>`; } return; }
+    const next = nextTextT(i);
+    if (!isText(l.text)) { if (isPause(i)) { items.push({ t: l.t, pause: true }); html += `<div class="pause" data-k="${items.length - 1}">• • •</div>`; } return; }
     const words = wordsFor(l.text), de = current.gloss?.byText?.[l.text]?.de || "";
     items.push({ t: l.t, i, words });
     html += `<div class="line" data-k="${items.length - 1}">` + rowsOf(words).map(r => `<div class="row">` + r.map(w =>
       `<span class="w"><span class="ru">${stressHtml(w.stress || w.ru)}</span><span class="lat">${esc(w.lat || translit(w.ru))}</span>${isCont(w) ? `<span class="de grp"> </span>` : `<span class="de">${esc(w.de || " ")}</span>`}</span>`).join("") + `</div>`).join("")
       + (de ? `<div class="tr">${esc(de)}</div>` : "") + `</div>`;
     // long instrumental gap after this line → show a pause marker
-    if (synced && next - l.t > 12000 && L[i + 1]?.text !== "") { const t = l.t + Math.max(4000, syllablesOf(words) * 450 + 1500); items.push({ t, pause: true }); html += `<div class="pause" data-k="${items.length - 1}">• • •</div>`; }
+    let markedPause = false; for (let j = i + 1; j < L.length && !isText(L[j].text); j++) if (isPause(j)) markedPause = true;
+    if (synced && next - l.t > 12000 && !markedPause) { const t = l.t + Math.max(4000, syllablesOf(words) * 450 + 1500); items.push({ t, pause: true }); html += `<div class="pause" data-k="${items.length - 1}">• • •</div>`; }
   });
   current.items = items; current.idx = -2; updateBadge();
   const main = $("#lyrics"); main.innerHTML = html; main.classList.toggle("unsynced", !synced);
@@ -651,7 +657,7 @@ function tick() {
       if (el && performance.now() > userScrollUntil) window.scrollTo({ top: el.offsetTop - innerHeight * 0.32, behavior: "smooth" });
     }
     const item = current.items[k];
-    if (item && !item.pause) {     // estimated word timing inside the active line
+    if (item && !item.pause && item.words.length) {     // estimated word timing inside the active line
       const next = current.items[k + 1]?.t ?? clock.durationMs, total = syllablesOf(item.words);
       const t1 = Math.min(next - 150, item.t + Math.max(1500, total * 450));
       let acc = 0; const ws = els[k].querySelectorAll(".w");

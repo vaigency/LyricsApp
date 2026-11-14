@@ -40,7 +40,7 @@
     border-radius: 50%; border: 0; background: rgba(255,255,255,.1); display: grid; place-items: center; cursor: pointer; }
   .icon-btn:active { transform: scale(.94); }
   .status { position: fixed; z-index: 5; left: 50%; transform: translateX(-50%); top: calc(74px + var(--safe-t));
-    font-size: 13px; color: var(--soft); background: rgba(0,0,0,.22); padding: 5px 12px; border-radius: 999px;
+    font-size: 13px; color: #fff; background: rgba(20,20,22,.88); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); padding: 6px 14px; border-radius: 999px;
     max-width: calc(100vw - 32px); text-align: center; transition: opacity .3s; }
   .status:empty { opacity: 0; }
 
@@ -74,7 +74,9 @@
   .bar .track { position: absolute; left: 0; right: 0; height: 4px; border-radius: 4px; background: rgba(255,255,255,.22); overflow: hidden; }
   .bar .fill { height: 100%; width: 0; background: #fff; border-radius: 4px; }
   .times { display: flex; justify-content: space-between; font-size: 11px; color: var(--soft); font-variant-numeric: tabular-nums; margin-top: 2px; }
-  .btns { display: flex; align-items: center; justify-content: center; gap: 34px; margin-top: 4px; }
+  .btns { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+  .btns .nudge { font-size: 13px; font-weight: 600; color: var(--soft); width: 52px; height: 36px; border-radius: 18px; background: rgba(255,255,255,.1); }
+  .btns .nudge small { display: block; font-size: 10px; font-weight: 500; opacity: .75; margin-top: -1px; }
   .btns button { border: 0; background: none; color: #fff; padding: 6px; cursor: pointer; display: grid; place-items: center; }
   .btns .pp { width: 56px; height: 56px; border-radius: 50%; background: #fff; color: #000; }
   .btns button:active { transform: scale(.92); }
@@ -115,9 +117,11 @@
   <div class="bar" id="bar"><div class="track"><div class="fill" id="fill"></div></div></div>
   <div class="times"><span id="tNow">0:00</span><span id="tDur">0:00</span></div>
   <div class="btns">
+    <button class="nudge" id="nudgeMinus" aria-label="Text 1 Sekunde später">−1 s</button>
     <button id="btnPrev" aria-label="Vorheriger Song"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
     <button class="pp" id="btnPlay" aria-label="Play/Pause"></button>
     <button id="btnNext" aria-label="Nächster Song"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+    <button class="nudge" id="nudgePlus" aria-label="Text 1 Sekunde früher">+1 s</button>
   </div>
 </div></div>
 
@@ -544,6 +548,13 @@ async function skip(dir) {
   setTimeout(pollSpotify, 350); setTimeout(pollSpotify, 1000);
 }
 $("#btnPlay").onclick = togglePlay;
+function nudge(ms) {                  // + = text comes earlier, − = later; saved for this song
+  saveSongOff(songOff + ms); current.idx = -2;
+  const v = (songOff >= 0 ? "+" : "") + (songOff / 1000).toFixed(1).replace(".", ",");
+  setStatus(songOff === 0 ? "Timing: Original" : `Timing für diesen Song: ${v} s`);
+}
+$("#nudgeMinus").onclick = () => nudge(-1000);
+$("#nudgePlus").onclick = () => nudge(1000);
 $("#btnNext").onclick = () => skip(1);
 $("#btnPrev").onclick = () => skip(-1);
 /* progress bar: tap or drag to seek */

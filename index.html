@@ -251,7 +251,8 @@ async function sp(path, opts = {}) {
   if (r.status === 401) { tok.exp = 0; throw new Error("Spotify-Token abgelaufen"); }
   if (r.status === 204) return null;
   if (!r.ok) { let m = r.status; try { m = (await r.json()).error?.message || m; } catch {} throw new Error("Spotify: " + m); }
-  const t = await r.text(); return t ? JSON.parse(t) : null;
+  const t = await r.text();          // play/pause/next sometimes answer with a plain-text id, not JSON
+  try { return t ? JSON.parse(t) : null; } catch { return null; }
 }
 const metaOf = (it) => ({ key: "sp:" + it.id, ids: [it.id, it.linked_from?.id].filter(Boolean), title: it.name, artist: it.artists.map(a => a.name).join(", "),
   firstArtist: it.artists[0]?.name || "", album: it.album?.name || "", durationMs: it.duration_ms,

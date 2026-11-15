@@ -98,7 +98,8 @@
   .line.active .w { opacity: .62; transition: opacity .18s; }
   .line.active .w.sung { opacity: 1; }
   /* the line's meaning reads like another lyric line: white, a step quieter, same weight */
-  .line .tr { font-size: .6em; font-weight: 700; letter-spacing: -.01em; color: rgba(255,255,255,.5); margin-top: .55em; line-height: 1.25; }
+  .line .tr { display: none; font-size: .54em; font-weight: 600; color: var(--de); margin-top: .2em; line-height: 1.25; }
+  .line.active .tr { display: block; }
   body.no-lat .lat, body.no-de .w .de, body.no-tr .tr { display: none !important; }
   .pause { font-size: var(--ru); margin: 0 0 1.25em; letter-spacing: .3em; opacity: .4; font-weight: 800; }
   .pause.active { opacity: 1; animation: pulse 1.6s ease-in-out infinite; }
@@ -220,7 +221,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "25";
+const APP_VERSION = "26";
 const SPOTIFY_CLIENT_ID = "494e353046cc4d5caf383ef90d21ab60";
 
 /* ---------- storage ---------- */
@@ -378,7 +379,9 @@ async function pollSpotify() {
     clock.source = "spotify"; document.body.classList.remove("local");
     document.body.classList.add("playing-ui");
     clock.durationMs = cp.item.duration_ms;
-    if (performance.now() > ignorePollUntil) clock.set(cp.progress_ms + (cp.is_playing ? Math.min(rtt / 2, 400) : 0), cp.is_playing);
+    const pr = cp.progress_ms + (cp.is_playing ? Math.min(rtt / 2, 400) : 0);
+    // right after a seek Spotify may still report the old position – ignore it unless it matches ours
+    if (performance.now() > ignorePollUntil || Math.abs(pr - clock.raw()) < 1500) clock.set(pr, cp.is_playing);
     const meta = metaOf(cp.item);
     if (meta.key !== current.key) { loadTrack(meta); prefetchNext(meta.key); }
   } catch (e) { setStatus(e.message); }
@@ -722,7 +725,7 @@ function pickLoop(k) {
   if (loop.state === "pickIn") { loop.a = k; loop.state = "pickOut"; setStatus("Jetzt die letzte Zeile antippen (dieselbe = nur diese Zeile)", true); paintLoop(); return; }
   loop.b = Math.max(k, loop.a); loop.a = Math.min(k, loop.a);
   loop.inT = current.items[loop.a].t - 300;
-  loop.outT = lineEnd(loop.b) + 1500;   // let it run out a little: rather too long than cut off
+  loop.outT = Math.max(lineEnd(loop.b) + 1500, loop.inT + 4500);   // run out a little; at least 4.5 s so Spotify can keep up
   loop.count = 0; loop.state = "on";
   const n = loop.b - loop.a + 1;
   setStatus(`Schleife: ${n === 1 ? "1 Zeile" : n + " Zeilen"} · Loop-Button beendet sie`); paintLoop(); seekTo(loop.inT);
@@ -746,7 +749,7 @@ $("#btnLoop").onclick = () => {
 function checkLoop(t) {                // called every frame with the lyric time
   if (loop.state !== "on" || performance.now() < loop.cool) return;
   if (t >= loop.outT || t < loop.inT - 4000) {
-    loop.cool = performance.now() + 1200; loop.count++; seekTo(loop.inT); paintLoop();
+    loop.cool = performance.now() + 2000; loop.count++; seekTo(loop.inT); paintLoop();
   }
 }
 
@@ -784,7 +787,7 @@ const rawPos = () => clock.raw();
 function lyricToRaw(ms) { let r = ms - cfg.offsetMs; for (let i = 0; i < 3; i++) r = ms - cfg.offsetMs - offAt(r); return r; }
 const spCmd = (path, method = "PUT") => sp(path, { method }).catch(e => setStatus(e.message.includes("Premium") ? "Steuerung braucht Spotify Premium" : e.message));
 async function seekRaw(ms) {          // ms = position in the recording
-  ms = Math.max(0, Math.round(ms)); clock.set(ms, clock.playing); userScrollUntil = 0; ignorePollUntil = performance.now() + 1500;
+  ms = Math.max(0, Math.round(ms)); clock.set(ms, clock.playing); userScrollUntil = 0; ignorePollUntil = performance.now() + 4000;
   if (clock.source === "spotify") await spCmd(`/me/player/seek?position_ms=${ms}`);
 }
 const seekTo = (lyricMs) => seekRaw(lyricToRaw(lyricMs));
